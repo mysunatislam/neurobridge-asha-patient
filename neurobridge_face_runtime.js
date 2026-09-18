@@ -245,26 +245,29 @@
     const depress = cornerDepression(lms);
 
     // Adaptive thresholding from baseline
-    const baseEar = (twin && twin.earMean) || 0.27;
-    const thClose = Math.max(0.12, baseEar * 0.55);
-    const thOpen = Math.max(0.16, baseEar * 0.80);
+    const baseEar = (twin && twin.earMean && twin.earMean > 0.15) ? twin.earMean : 0.26;
+    const thClose = Math.max(0.165, baseEar * 0.70);
+    const thOpen = Math.max(0.195, baseEar * 0.83);
 
     // 3. Rule 1: Blinking 5 times in a row -> "I want water"
-    if (!blinkClosed && earAvg < thClose) {
+    const isEyesClosed = earAvg < thClose || earL < thClose || earR < thClose;
+    if (!blinkClosed && isEyesClosed) {
       blinkClosed = true;
       blinkT0 = t;
     } else if (blinkClosed && earAvg > thOpen) {
       blinkClosed = false;
       const dur = t - blinkT0;
-      if (dur >= 0.06 && dur <= 0.65) {
+      if (dur >= 0.04 && dur <= 1.2) {
         recentBlinks.push(t);
-        recentBlinks = recentBlinks.filter((bt) => t - bt <= 4.0);
-        console.log('[NeuroBridge Face] Blink registered. Recent consecutive count:', recentBlinks.length, '/ 5');
+        recentBlinks = recentBlinks.filter((bt) => t - bt <= 5.0);
+        console.log('[NeuroBridge Face] Blink detected! Recent count:', recentBlinks.length, '/ 5, dur:', dur.toFixed(2), 's');
+        
+        // Broadcast every valid single blink so calibration & telemetry HUD receive it immediately!
+        broadcastSignal('blink', 0.95);
+
         if (recentBlinks.length >= 5) {
           recentBlinks = [];
           speakAndEmit('I want water', 'water', 'blink');
-        } else {
-          broadcastSignal('blink', 0.95);
         }
       }
     }
@@ -348,8 +351,9 @@
     }
 
     // 8. Live Telemetry Broadcast
-    const leftOpen = Math.min(1.0, Math.max(0.0, (earL - 0.14) / 0.15));
-    const rightOpen = Math.min(1.0, Math.max(0.0, (earR - 0.14) / 0.15));
+    const isBlinkingNow = blinkClosed || earAvg < thClose;
+    const leftOpen = isBlinkingNow ? 0.05 : Math.min(1.0, Math.max(0.0, (earL - 0.14) / 0.12));
+    const rightOpen = isBlinkingNow ? 0.05 : Math.min(1.0, Math.max(0.0, (earR - 0.14) / 0.12));
 
     broadcastStatus({
       faceDetected: true,
@@ -371,60 +375,33 @@
 
   // Synthetic Demonstration Engine (from NeuroFace Sense demo mode)
   function startSimulationLoop() {
-    if (simulatedActive) return;
+    if (simulationTimer) return;
     simulatedActive = true;
-    console.log('[NeuroBridge Face] Synthetic reference mode active.');
+    console.log('[NeuroBridge Face] Idle reference telemetry active.');
 
     let tick = 0;
     simulationTimer = setInterval(() => {
       tick++;
-      const cycle = tick % 140; // 14-second complete showcase cycle
+      const cycle = tick % 140;
       let curYaw = 0.0;
       let curPitch = 0.0;
       let curEye = 0.88;
       let curSmile = 0.05;
       let simNod = false;
-      let simAbnormal = 'Normal';
 
-      // 10-30: Move head right 5 times showcase -> "Give me some food"
+      // Subtle breathing motion for visual liveliness only — NEVER triggers speech
       if (cycle >= 10 && cycle <= 35) {
         const sub = (cycle - 10) % 5;
-        curYaw = sub < 3 ? 18.0 : 2.0;
-        if (cycle === 35) {
-          speakAndEmit('Give me some food', 'food', 'eyeLookRight');
-        }
-      }
-      // 40-65: Blink 5 times showcase -> "I want water"
-      else if (cycle >= 40 && cycle <= 65) {
+        curYaw = sub < 3 ? 3.0 : 0.0;
+      } else if (cycle >= 40 && cycle <= 65) {
         const sub = (cycle - 40) % 5;
-        curEye = sub < 2 ? 0.06 : 0.88;
-        if (cycle === 65) {
-          speakAndEmit('I want water', 'water', 'blink');
-        }
-      }
-      // 70-90: Smile showcase -> "I am feeling good"
-      else if (cycle >= 70 && cycle <= 95) {
+        curEye = sub < 2 ? 0.82 : 0.88;
+      } else if (cycle >= 70 && cycle <= 95) {
         const progress = Math.sin(((cycle - 70) / 25) * Math.PI);
-        curSmile = 0.05 + 0.75 * progress;
-        if (cycle === 85) {
-          speakAndEmit('I am feeling good', 'feeling_good', 'smile');
-        }
-      }
-      // 100-115: Head nod showcase -> "Yes, confirmed"
-      else if (cycle >= 100 && cycle <= 115) {
+        curSmile = 0.04 + 0.12 * progress;
+      } else if (cycle >= 100 && cycle <= 115) {
         const progress = Math.sin(((cycle - 100) / 15) * Math.PI);
-        curPitch = -16.0 * progress;
-        simNod = progress > 0.4;
-        if (cycle === 108) {
-          speakAndEmit('Yes, confirmed', 'confirm', 'headNodSmile');
-        }
-      }
-      // 120-135: Abnormality detection demonstration
-      else if (cycle >= 120 && cycle <= 135) {
-        simAbnormal = 'Sustained droop detected (4.2%)';
-        if (cycle === 130) {
-          speakAndEmit('Emergency help needed', 'abnormality', 'seizureAlert');
-        }
+        curPitch = -4.0 * progress;
       }
 
       broadcastStatus({
@@ -439,7 +416,7 @@
         mouthDistance: 0.08 + curSmile * 0.06,
         symmetryScore: 0.95,
         isNodding: simNod,
-        abnormality: simAbnormal,
+        abnormality: 'Normal',
         calibrated: true,
         observedAt: Date.now(),
       });
@@ -489,7 +466,9 @@
         videoEl.autoplay = true;
         videoEl.playsInline = true;
         videoEl.muted = true;
-        videoEl.style.cssText = 'position:fixed;bottom:2px;right:2px;width:4px;height:4px;opacity:0.05;pointer-events:none;z-index:-99;';
+        videoEl.width = 640;
+        videoEl.height = 480;
+        videoEl.style.cssText = 'position:fixed;bottom:0;right:0;width:160px;height:120px;opacity:0.01;pointer-events:none;z-index:-999;';
         document.body.appendChild(videoEl);
       }
       videoEl.srcObject = cameraStream;
@@ -528,6 +507,15 @@
     }
   }
 
+  async function ensureMesh() {
+    for (let i = 0; i < 20; i++) {
+      const m = initMesh();
+      if (m) return m;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return null;
+  }
+
   const NeuroBridgeFace = {
     async start() {
       if (isRunning) return;
@@ -544,10 +532,11 @@
       });
 
       const cameraOk = await startCamera();
-      const meshOk = initMesh();
+      const meshOk = await ensureMesh();
 
       if (cameraOk && meshOk) {
         stopSimulationLoop();
+        console.log('[NeuroBridge Face] Real camera and FaceMesh active — live inference running.');
         animFrameId = requestAnimationFrame(pump);
       }
     },
