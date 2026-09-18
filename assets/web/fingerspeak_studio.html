@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NeuroBridge Asha — 3D Assistive Hand Studio</title>
+<script>
+window.addEventListener('error', function(e) {
+  var box = document.getElementById('cameraErrorMessage');
+  if (box) {
+    box.textContent = 'Page JS Error: ' + (e.message || e);
+    box.style.display = 'block';
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  var box = document.getElementById('cameraErrorMessage');
+  if (box) {
+    box.textContent = 'Unhandled Error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason || e);
+    box.style.display = 'block';
+  }
+});
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0F1720; --surface:#161F29; --surface-2:#1D2833; --line:#28353F;
+    --teal:#4FD1C5; --teal-dim:#2E7D74; --amber:#F2A65A; --red:#E86A6A; --violet:#A78BFA;
+    --text:#EAF2F3; --text-dim:#8CA0A8;
+    --mono:'IBM Plex Mono', monospace; --display:'Space Grotesk', sans-serif; --body:'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--body); min-height:100vh; }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:20px 28px; border-bottom:1px solid var(--line); }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-mark{ width:34px;height:34px;border-radius:8px; background:linear-gradient(135deg,var(--teal),var(--teal-dim));
+    display:flex;align-items:center;justify-content:center; font-family:var(--display); font-weight:700; color:#08201D; font-size:15px; }
+  h1{font-family:var(--display); font-size:19px; margin:0; font-weight:600; letter-spacing:0.2px;}
+  .subtitle{font-size:12px; color:var(--text-dim); margin-top:2px;}
+  .status-pill{ font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:20px;
+    border:1px solid var(--line); color:var(--text-dim); display:flex; align-items:center; gap:7px; }
+  .dot{width:7px;height:7px;border-radius:50%; background:var(--text-dim);}
+  .dot.live{background:var(--teal); box-shadow:0 0 8px var(--teal);}
+  .dot.off{background:var(--red);}
+
+  main{ display:grid; grid-template-columns:1.1fr 0.9fr; gap:0; max-width:1360px; margin:0 auto; }
+  @media (max-width: 900px){ main{grid-template-columns:1fr;} }
+  .panel{padding:24px 28px; border-right:1px solid var(--line);}
+  .panel:last-child{border-right:none;}
+
+  .video-wrap{ position:relative; width:100%; aspect-ratio:4/3; background:#0A1119;
+    border-radius:14px; overflow:hidden; border:1px solid var(--line); }
+  video, canvas.overlay{position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;}
+  video{transform:scaleX(-1);}
+  canvas.overlay{transform:scaleX(-1);}
+
+  .overlay-msg{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px; text-align:center; padding:30px; background:rgba(10,17,25,0.9); z-index:5; }
+  .btn{ font-family:var(--body); font-weight:600; font-size:13.5px; padding:11px 20px;
+    border-radius:9px; border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+    cursor:pointer; transition:all .15s ease; }
+  .btn:hover{border-color:var(--teal); color:var(--teal);}
+  .btn.primary{background:var(--teal); color:#08201D; border-color:var(--teal);}
+  .btn.primary:hover{background:#63DAD0;}
+  .btn.warm{background:var(--amber); color:#2B1904; border-color:var(--amber);}
+  .btn.ghost{background:transparent;}
+  .btn:disabled{opacity:.35; cursor:not-allowed;}
+  .btn.small{padding:7px 12px; font-size:12px;}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+
+  .vitals{ margin-top:16px; border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:14px 16px; }
+  .vitals-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .vitals-head .label{font-family:var(--mono); font-size:11px; color:var(--text-dim); letter-spacing:0.5px;}
+  .vitals-head .value{font-family:var(--mono); font-size:13px; color:var(--teal);}
+  #vitalsCanvas{width:100%; height:56px; display:block;}
+  .gesture-readout{ display:flex; justify-content:space-between; align-items:center; margin-top:10px;
+    font-family:var(--mono); font-size:12px; color:var(--text-dim); }
+  .gesture-readout .current{color:var(--text); font-size:15px; font-weight:500; font-family:var(--body);}
+  .intent-badge{ font-family:var(--mono); font-size:10px; padding:3px 9px; border-radius:12px; border:1px solid var(--line); }
+  .intent-badge.REST{color:var(--text-dim);}
+  .intent-badge.CANDIDATE{color:var(--amber); border-color:var(--amber);}
+  .intent-badge.WAIT_RELEASE{color:var(--violet); border-color:var(--violet);}
+
+  section h2{ font-family:var(--display); font-size:14.5px; font-weight:600; margin:0 0 4px 0; }
+  section .desc{font-size:12.5px; color:var(--text-dim); margin:0 0 14px 0; line-height:1.5;}
+
+  .tabs{display:flex; gap:4px; margin-bottom:18px; border-bottom:1px solid var(--line);}
+  .tab{ padding:9px 14px; font-size:12.5px; font-weight:600; color:var(--text-dim);
+    cursor:pointer; border-bottom:2px solid transparent; font-family:var(--body); }
+  .tab.active{color:var(--teal); border-bottom-color:var(--teal);}
+  .tabpage{display:none;}
+  .tabpage.active{display:block;}
+
+  .gesture-row{ display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid var(--line);
+    border-radius:10px; margin-bottom:8px; background:var(--surface); }
+  .gesture-row input[type=text]{ background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    border-radius:6px; padding:7px 9px; font-size:12.5px; font-family:var(--body); width:100%; }
+  .gesture-row .col{display:flex; flex-direction:column; gap:4px;}
+  .gesture-row .col.name{flex:1;}
+  .gesture-row .col.phrase{flex:1.3;}
+  .gesture-row label{font-size:10px; color:var(--text-dim); font-family:var(--mono); letter-spacing:0.4px;}
+  .sample-count{ font-family:var(--mono); font-size:11px; color:var(--text-dim); min-width:52px; text-align:center; }
+  .sample-count.ready{color:var(--teal);}
+  .remove-x{ background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:15px; padding:2px 6px; }
+  .remove-x:hover{color:var(--red);}
+  .remove-x:disabled{opacity:.25; cursor:not-allowed;}
+  .protected-tag{ font-size:9px; font-family:var(--mono); color:var(--teal); border:1px solid var(--teal-dim);
+    border-radius:8px; padding:2px 6px; white-space:nowrap; }
+  .add-row-btn{width:100%; margin-top:2px;}
+
+  .train-block{ margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+  .train-status{font-family:var(--mono); font-size:12px; color:var(--text-dim); margin-top:10px; white-space:pre-wrap;}
+  .capture-quality{font-family:var(--mono); font-size:11px; margin-top:10px; min-height:14px;}
+  .capture-quality.ok{color:var(--teal);}
+  .capture-quality.bad{color:var(--red);}
+
+  .session-note{font-size:11px; color:var(--text-dim); font-family:var(--mono);}
+
+  .quality-panel{margin-top:14px; display:none;}
+  .quality-panel.show{display:block;}
+  .quality-head{display:flex; align-items:baseline; gap:14px; margin-bottom:12px;}
+  .quality-acc{font-family:var(--display); font-size:32px; font-weight:700; color:var(--teal);}
+  .quality-acc-label{font-family:var(--mono); font-size:10px; color:var(--text-dim); max-width:160px; line-height:1.4;}
+  .cm-wrap{overflow-x:auto;}
+  .cm-grid{border-collapse:collapse; font-family:var(--mono); font-size:10.5px;}
+  .cm-grid th, .cm-grid td{padding:6px 8px; text-align:center; border:1px solid var(--line); min-width:34px;}
+  .cm-grid th{color:var(--text-dim); font-weight:500; font-size:9.5px;}
+  .cm-grid td.diag{font-weight:600;}
+  .cm-note{font-size:10.5px; color:var(--text-dim); margin-top:8px; line-height:1.5;}
+  .metrics-table{border-collapse:collapse; font-family:var(--mono); font-size:10.5px; margin-top:12px; width:100%;}
+  .metrics-table th, .metrics-table td{padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);}
+  .metrics-table th{color:var(--text-dim); font-weight:500; font-size:9.5px;}
+
+  .log{ display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; padding-right:4px; }
+  .log-entry{ display:flex; justify-content:space-between; align-items:center; padding:10px 13px;
+    background:var(--surface); border:1px solid var(--line); border-radius:9px; font-size:13px; animation:slidein .25s ease; }
+  .log-entry .t{font-family:var(--mono); font-size:10.5px; color:var(--text-dim);}
+  @keyframes slidein{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+  .log-empty{color:var(--text-dim); font-size:12.5px; padding:12px 0;}
+
+  .footer-note{ font-size:11px; color:var(--text-dim); line-height:1.6; margin-top:22px; padding-top:16px;
+    border-top:1px solid var(--line); }
+  .footer-note code{font-family:var(--mono); background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+
+  #wizardOverlay{display:none;}
+  .wizard-count{font-family:var(--display); font-size:56px; font-weight:700; color:var(--teal); line-height:1;}
+  .wizard-title{font-family:var(--display); font-size:18px; font-weight:600;}
+  .wizard-sub{font-size:12.5px; color:var(--text-dim);}
+  .wizard-progress{display:flex; gap:5px; margin-top:6px;}
+  .wizard-progress .seg{width:14px; height:5px; border-radius:3px; background:var(--line);}
+  .wizard-progress .seg.done{background:var(--teal);}
+
+  input[type=file]{display:none;}
+
+  .confidence-ring{ position:absolute; top:14px; right:14px; z-index:4; filter:drop-shadow(0 0 6px rgba(0,0,0,0.4)); }
+  #ringProgress{ transition: stroke-dashoffset .1s linear, stroke .2s ease; }
+
+  .caption-banner{ position:absolute; left:0; right:0; bottom:0; padding:18px 22px 22px;
+    background:linear-gradient(to top, rgba(10,17,25,0.94), rgba(10,17,25,0));
+    display:flex; align-items:center; gap:10px; justify-content:center; text-align:center;
+    opacity:0; transform:translateY(10px); transition:opacity .3s ease, transform .3s ease;
+    z-index:6; pointer-events:none; }
+  .caption-banner.show{ opacity:1; transform:translateY(0); }
+  .caption-banner .icon{ font-size:24px; }
+  .caption-banner .text{ font-family:var(--display); font-size:21px; font-weight:600; color:var(--text); }
+
+  .video-wrap.triggered{ animation: pulseGlow 0.9s ease; }
+  @keyframes pulseGlow{
+    0%{ box-shadow:0 0 0 0 rgba(79,209,197,0.55); }
+    55%{ box-shadow:0 0 0 16px rgba(79,209,197,0); }
+    100%{ box-shadow:0 0 0 0 rgba(79,209,197,0); }
+  }
+
+  .prob-panel{ margin-top:12px; }
+  .prob-row{ display:flex; align-items:center; gap:9px; margin-bottom:7px; font-family:var(--mono); font-size:11px; }
+  .prob-row .pname{ width:78px; flex-shrink:0; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .prob-track{ flex:1; height:9px; background:var(--surface-2); border-radius:5px; overflow:hidden; }
+  .prob-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--teal-dim),var(--teal)); transition:width .12s ease, background .2s ease; }
+  .prob-row.top .pname{ color:var(--text); }
+  .prob-row.top .prob-fill{ background:linear-gradient(90deg,var(--amber),#FFCC85); }
+  .prob-pct{ width:34px; text-align:right; color:var(--text-dim); }
+
+  .test-voice-row{ display:flex; align-items:center; gap:10px; margin-top:14px; }
+  .test-voice-note{ font-size:11px; color:var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">NA</div>
+    <div>
+      <h1>NeuroBridge Asha</h1>
+      <div class="subtitle">Assistive 3D Hand Communicator · Micro-gestures → Speech</div>
+    </div>
+  </div>
+  <div class="status-pill"><span class="dot off" id="statusDot"></span><span id="statusText">camera not started</span></div>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" autoplay playsinline webkit-playsinline muted></video>
+      <canvas class="overlay" id="overlay"></canvas>
+
+      <div class="overlay-msg" id="startOverlay">
+        <div style="font-family:var(--display); font-size:16px; font-weight:600;">Start the camera to begin</div>
+        <div style="font-size:12.5px; color:var(--text-dim); max-width:340px;">
+          This runs entirely in your browser — nothing is uploaded. Hand tracking uses MediaPipe;
+          gestures are classified from rotation-normalized 3D landmarks, joint angles, and motion,
+          via a bidirectional GRU trained live on your calibration samples.
+        </div>
+        <div id="cameraErrorMessage" style="display:none; color:#E86A6A; font-size:12.5px; max-width:340px; margin-bottom:10px; line-height:1.4;"></div>
+        <button class="btn primary" id="startBtn" onclick="startCamera()">Enable camera</button>
+      </div>
+
+      <div class="overlay-msg" id="wizardOverlay">
+        <div class="wizard-title" id="wizardTitle">Get ready: Yes</div>
+        <div class="wizard-count" id="wizardCount">3</div>
+        <div class="wizard-sub" id="wizardSub">Rep 1 of 8</div>
+        <div class="wizard-progress" id="wizardProgress"></div>
+        <button class="btn ghost small" id="wizardCancelBtn" style="margin-top:10px;">Cancel calibration</button>
+      </div>
+
+      <div class="confidence-ring" id="confidenceRingWrap" title="Progress toward confirming a gesture">
+        <svg width="52" height="52" viewBox="0 0 52 52">
+          <circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,0.1)" stroke-width="4" fill="none"/>
+          <circle id="ringProgress" cx="26" cy="26" r="22" stroke="#4FD1C5" stroke-width="4" fill="none"
+            stroke-linecap="round" stroke-dasharray="138.2" stroke-dashoffset="138.2" transform="rotate(-90 26 26)"/>
+        </svg>
+      </div>
+
+      <div class="caption-banner" id="captionBanner">
+        <span class="icon" id="captionIcon">💬</span><span class="text" id="captionText"></span>
+      </div>
+    </div>
+
+    <div class="vitals">
+      <div class="vitals-head">
+        <span class="label">GESTURE CONFIDENCE</span>
+        <span class="value" id="fpsReadout">— fps</span>
+      </div>
+      <canvas id="vitalsCanvas"></canvas>
+      <div class="gesture-readout">
+        <div>predicted class</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="current" id="currentGesture">—</div>
+          <span class="intent-badge REST" id="intentBadge">REST</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="vitals prob-panel">
+      <div class="vitals-head"><span class="label">LIVE GESTURE PROBABILITIES</span></div>
+      <div id="probBars"><div class="test-voice-note">Train a model to see live probabilities here.</div></div>
+    </div>
+
+    <div class="footer-note">
+      Motivation: eye-tracking AAC devices typically max out around 10–20 words/min and fatigue easily under
+      long-term use; implantable BCIs solve the mobility gap but require surgery. FingerSpeak targets patients
+      with ALS, spinal cord injury, or stroke who retain <em>some</em> low-effort, voluntary finger movement.
+      A gesture must be held stably to <strong>confirm</strong>, and the hand must return to
+      <strong>Rest</strong> before another phrase can trigger — this is deliberate: it trades a little speed
+      for far fewer accidental or repeated activations, which matters more for a real AAC device than raw
+      responsiveness. This is a portfolio prototype, not a validated clinical device — see
+      <code>README.md</code> for the roadmap.
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs">
+      <div class="tab active" data-tab="calibrate">Calibrate</div>
+      <div class="tab" data-tab="speak">Speak mode</div>
+      <div class="tab" data-tab="evaluate">Evaluate</div>
+      <div class="tab" data-tab="log">Log</div>
+    </div>
+
+    <div class="tabpage active" id="tab-calibrate">
+      <h2>Gesture vocabulary</h2>
+      <p class="desc">"Rest" is protected — it can't be deleted, because it's what the system uses to
+      tell "no intent" apart from a real command. Run guided calibration to walk through each gesture
+      with a countdown. <strong>For a meaningful evaluation</strong>, calibrate in more than one session
+      (different lighting, distance, or position) using "New session" below — five reps from a single
+      sitting will look artificially accurate.</p>
+      <div id="gestureList"></div>
+      <button class="btn small add-row-btn" id="addGestureBtn">+ add gesture</button>
+
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn primary" id="wizardStartBtn" disabled>▶ Start guided calibration</button>
+        <button class="btn small" id="newSessionBtn">🔄 New session</button>
+        <span class="session-note" id="sessionNote">session 1 · 0 samples</span>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn small" id="exportBtn">Export profile</button>
+        <button class="btn small" id="importBtn">Import profile</button>
+        <input type="file" id="importFile" accept="application/json">
+      </div>
+      <div class="capture-quality" id="captureQuality"></div>
+
+      <div class="train-block" style="margin-top:14px;">
+        <div class="vitals-head" style="margin-bottom:6px;">
+          <span class="label" id="motionPreviewLabel">LAST CAPTURE — record a gesture to preview its motion</span>
+        </div>
+        <canvas id="motionPreview" style="width:100%; height:90px; display:block; background:var(--surface-2); border-radius:8px;"></canvas>
+      </div>
+
+      <div class="train-block">
+        <h2 style="margin-bottom:8px;">Train model</h2>
+        <p class="desc" style="margin-bottom:10px;">Each real sample is expanded into augmented variants
+        (angle, timing, and tracking-noise jitter applied to the raw landmarks, before feature extraction)
+        for robustness. Features are rotation-normalized 3D coordinates + finger-joint angles + fingertip
+        distances + motion velocity (~98 per frame). A bidirectional GRU trains with early stopping on a
+        held-out split.</p>
+        <div class="btn-row">
+          <button class="btn primary" id="trainBtn" disabled>Train model</button>
+          <button class="btn small" id="saveModelBtn" disabled>💾 Save model</button>
+          <button class="btn small" id="loadModelBtn">📂 Load saved model</button>
+        </div>
+        <div class="train-status" id="trainStatus">Waiting for samples…</div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-speak">
+      <h2>Speak mode</h2>
+      <p class="desc">Once trained, hold or perform a calibrated gesture until the ring around the video
+      fills — that's the confirmation dwell time, longer for gestures like "Emergency." After it speaks,
+      you must return to Rest before triggering again. A prediction is rejected outright — regardless of
+      confidence — if it's too far from every known gesture, which catches confident-but-wrong guesses on
+      movements the model was never calibrated on.</p>
+      <label style="font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px;">Active model</label>
+      <select id="modelSelect" disabled style="width:100%; padding:9px 10px; margin-bottom:14px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; font-family:var(--body); font-size:13px;">
+        <option value="bigru">Bidirectional GRU (default — usually most accurate)</option>
+        <option value="dtw">DTW k-NN (simple time-series baseline)</option>
+        <option value="prototype">Nearest-prototype (simplest, most interpretable)</option>
+      </select>
+      <label style="font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px;">Confidence threshold: <span id="threshVal">0.75</span></label>
+      <input type="range" id="threshSlider" min="0.5" max="0.98" step="0.01" value="0.75" style="width:100%; margin-bottom:16px;">
+      <button class="btn warm" id="liveToggle" disabled>Enable speak mode</button>
+      <div class="test-voice-row">
+        <button class="btn small" id="testVoiceBtn">🔊 Test voice</button>
+        <span class="test-voice-note">Click once to confirm audio works in your browser.</span>
+      </div>
+
+      <div class="train-block" style="margin-top:16px;">
+        <h2 style="margin-bottom:4px;">Reliability tracker</h2>
+        <p class="desc" style="margin-bottom:10px;">For an AAC device, false activations matter more than
+        raw accuracy. Mark them as they happen during a live session to get a real per-hour rate instead
+        of a guess.</p>
+        <div class="btn-row">
+          <button class="btn small" id="markFalseBtn">⚠ False activation</button>
+          <button class="btn small" id="markMissedBtn">🚫 Missed gesture</button>
+          <button class="btn small" id="resetReliabilityBtn">↺ Reset session</button>
+        </div>
+        <table class="metrics-table" id="reliabilityTable" style="margin-top:12px;"></table>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-evaluate">
+      <h2>Model evaluation</h2>
+      <p class="desc">Honest evaluation on samples the model never trained on. The label below tells you
+      whether that held-out data came from a separate calibration session (a real test of generalization)
+      or just a random slice of the same sitting (a much weaker signal).</p>
+      <div class="quality-panel" id="qualityPanel">
+        <div class="quality-head">
+          <div>
+            <div class="quality-acc" id="qualityAcc">—</div>
+            <div class="quality-acc-label" id="qualityAccLabel">VALIDATION ACCURACY</div>
+          </div>
+        </div>
+        <div class="cm-wrap"><table class="cm-grid" id="cmTable"></table></div>
+        <div class="cm-note">Rows = true gesture, columns = predicted gesture. Diagonal = correct.
+        Confusion matrix and per-class metrics below are for the active BiGRU model.</div>
+        <table class="metrics-table" id="metricsTable"></table>
+
+        <h2 style="margin:18px 0 4px;">Model comparison</h2>
+        <p class="desc" style="margin-bottom:8px;">All three approaches evaluated on the identical
+        held-out sequences, so this is an apples-to-apples comparison, not separately-tuned numbers.
+        With very small personalized datasets, a simpler model sometimes generalizes better than a
+        neural network — that's worth knowing, not just accepting the fanciest option by default.</p>
+        <table class="metrics-table" id="compareTable"></table>
+      </div>
+      <div class="test-voice-note" id="noEvalNote">Train a model to see evaluation results here.</div>
+    </div>
+
+
+    <div class="tabpage" id="tab-log">
+      <h2>Spoken log</h2>
+      <p class="desc">Everything the system has spoken this session.</p>
+      <div class="log" id="logList"><div class="log-empty">Nothing spoken yet.</div></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+
+<script>
+let HandLandmarker = null;
+let FilesetResolver = null;
+
+async function ensureMediaPipeVision() {
+  if (HandLandmarker && FilesetResolver) return true;
+  try {
+    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14");
+    HandLandmarker = vision.HandLandmarker;
+    FilesetResolver = vision.FilesetResolver;
+    return true;
+  } catch (e) {
+    console.warn("MediaPipe CDN dynamic import failed:", e);
+    return false;
+  }
+}
+
+// ================= config =================
+const SEQ_LEN = 20;
+const CAPTURE_WINDOW_MS = 900;
+const LIVE_BUFFER_MAX_MS = 1400;
+const REPS_PER_GESTURE = 8;
+const MIN_SAMPLES_TO_TRAIN = 5;
+const AUG_PER_SAMPLE = 6;
+const MAX_EPOCHS = 150;
+const EARLY_STOP_PATIENCE = 14;
+const FEATURE_LEN = 98; // 63 coords + 10 joint angles + 10 fingertip distances + 15 velocity
+const FINGERTIP_IDX = [4,8,12,16,20];
+const FINGER_CHAINS = { thumb:[1,2,3,4], index:[5,6,7,8], middle:[9,10,11,12], ring:[13,14,15,16], pinky:[17,18,19,20] };
+const RELEASE_STREAK_NEEDED = 5; // consistent rest/low-confidence ticks (~600ms) required before re-triggering
+const OOD_REJECT_MULTIPLIER = 2.2; // reject a prediction if its distance to the nearest class prototype
+                                     // exceeds this multiple of that class's own training spread
+const DTW_K = 3; // k for DTW k-nearest-neighbor classification
+
+// ================= state =================
+let handLandmarker = null;
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+let running = false;
+let lastVideoTime = -1;
+let currentSessionId = cid();
+let sessionCount = 1;
+
+function guessIcon(name){
+  const n = (name||'').toLowerCase();
+  if (n.includes('water') || n.includes('thirst')) return '💧';
+  if (n.includes('nurse') || n.includes('help') || n.includes('call')) return '🔔';
+  if (n.includes('pain') || n.includes('hurt')) return '⚠️';
+  if (n.includes('emergency') || n.includes('urgent')) return '🚨';
+  if (n.includes('yes')) return '👍';
+  if (n.includes('no')) return '🙅';
+  if (n.includes('bathroom') || n.includes('toilet') || n.includes('restroom')) return '🚻';
+  if (n.includes('rest')) return '🖐️';
+  return '💬';
+}
+
+let gestures = [
+  { id: cid(), name: 'Rest', phrase: '', samples: [], icon: '🖐️', protected: true },
+  { id: cid(), name: 'Yes', phrase: 'Yes.', samples: [], icon: '👍' },
+  { id: cid(), name: 'No', phrase: 'No.', samples: [], icon: '🙅' },
+  { id: cid(), name: 'Water', phrase: 'I need water, please.', samples: [], icon: '💧' },
+  { id: cid(), name: 'Nurse', phrase: 'Please call the nurse.', samples: [], icon: '🔔' },
+];
+
+let model = null;
+let liveMode = false;
+let confidenceThreshold = 0.75;
+let vitalsHistory = new Array(80).fill(0);
+
+let currentRawFrame = null;
+let liveBuffer = [];
+let recording = null;
+let lastInferenceAt = 0;
+const INFERENCE_INTERVAL_MS = 120;
+let wizardActive = false;
+
+// intent state machine
+let intentState = 'REST'; // REST | CANDIDATE | WAIT_RELEASE
+let candidateIdx = null;
+let candidateStart = 0;
+let restStreak = 0;
+
+function cid(){ return 'g_' + Math.random().toString(36).slice(2, 9); }
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ================= vector helpers =================
+function vnorm(v){ const l=Math.hypot(v[0],v[1],v[2])||1e-6; return [v[0]/l,v[1]/l,v[2]/l]; }
+function vdot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function vcross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function vsub(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function vscale(v,s){ return [v[0]*s,v[1]*s,v[2]*s]; }
+
+// ================= feature extraction (rotation-normalized 3D + angles + distances + velocity) =================
+function flattenLandmarks(lm){
+  const out = new Array(63);
+  for (let i=0;i<21;i++){ out[i*3]=lm[i].x; out[i*3+1]=lm[i].y; out[i*3+2]=lm[i].z||0; }
+  return out;
+}
+
+function computeFullFeatures(raw63){
+  const P = i => [raw63[i*3], raw63[i*3+1], raw63[i*3+2]];
+  const wrist = P(0), midMcp = P(9), indexMcp = P(5), pinkyMcp = P(17);
+  const scaleLen = Math.hypot(midMcp[0]-wrist[0], midMcp[1]-wrist[1], midMcp[2]-wrist[2]) || 1e-6;
+
+  // build a per-frame local hand basis so gestures are invariant to hand rotation/position on screen
+  const eY = vnorm(vsub(midMcp, wrist));
+  let hRaw = vsub(pinkyMcp, indexMcp);
+  const d = vdot(hRaw, eY);
+  hRaw = [hRaw[0]-d*eY[0], hRaw[1]-d*eY[1], hRaw[2]-d*eY[2]];
+  const eX = vnorm(hRaw);
+  const eZ = vnorm(vcross(eX, eY));
+
+  const coords = new Array(63);
+  for (let i=0;i<21;i++){
+    const rel = vscale(vsub(P(i), wrist), 1/scaleLen);
+    coords[i*3]   = vdot(rel, eX);
+    coords[i*3+1] = vdot(rel, eY);
+    coords[i*3+2] = vdot(rel, eZ);
+  }
+
+  const angles = [];
+  for (const chain of Object.values(FINGER_CHAINS)){
+    for (let j=0;j<chain.length-2;j++){
+      const a=P(chain[j]), b=P(chain[j+1]), c=P(chain[j+2]);
+      const v1 = vnorm(vsub(a,b)), v2 = vnorm(vsub(c,b));
+      angles.push(Math.acos(Math.max(-1,Math.min(1,vdot(v1,v2)))) / Math.PI);
+    }
+  }
+
+  const distances = [];
+  for (let i=0;i<FINGERTIP_IDX.length;i++){
+    for (let j=i+1;j<FINGERTIP_IDX.length;j++){
+      const a=P(FINGERTIP_IDX[i]), b=P(FINGERTIP_IDX[j]);
+      distances.push(Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]) / scaleLen);
+    }
+  }
+
+  return [...coords, ...angles, ...distances]; // 83
+}
+
+function addVelocity(seq){
+  const tipCoordIdx = FINGERTIP_IDX.map(i => i*3);
+  return seq.map((frame, idx) => {
+    const prev = idx>0 ? seq[idx-1] : frame;
+    const vel = [];
+    for (const ci of tipCoordIdx) vel.push(frame[ci]-prev[ci], frame[ci+1]-prev[ci+1], frame[ci+2]-prev[ci+2]);
+    return frame.concat(vel); // 83+15=98
+  });
+}
+
+function buildModelInput(rawSeq){ return addVelocity(rawSeq.map(computeFullFeatures)); }
+
+function resampleSequence(timedFrames, count, windowMs){
+  if (timedFrames.length < 2) return null;
+  const latest = timedFrames[timedFrames.length - 1].t;
+  const start = latest - windowMs;
+  const inWindow = timedFrames.filter(f => f.t >= start - 50);
+  if (inWindow.length < 2) return null;
+  const out = [];
+  for (let i = 0; i < count; i++){
+    const targetT = start + (i / (count - 1)) * windowMs;
+    let lo = inWindow[0], hi = inWindow[inWindow.length - 1];
+    for (let j = 0; j < inWindow.length - 1; j++){
+      if (inWindow[j].t <= targetT && inWindow[j+1].t >= targetT){ lo = inWindow[j]; hi = inWindow[j+1]; break; }
+    }
+    const span = hi.t - lo.t;
+    const alpha = span > 0 ? (targetT - lo.t) / span : 0;
+    out.push(lo.feat.map((v, idx) => v + (hi.feat[idx] - v) * alpha));
+  }
+  return out;
+}
+
+// ================= augmentation (operates on RAW landmark sequences, before feature extraction,
+// so rotated/jittered/time-warped raw motion still produces geometrically-consistent engineered features) =================
+function randomAffine(){ const theta=(Math.random()-0.5)*0.35; const scale=0.9+Math.random()*0.2; return {cos:Math.cos(theta), sin:Math.sin(theta), scale}; }
+function applyAffine(seq, aff){
+  return seq.map(frame => {
+    const out = frame.slice();
+    for (let i=0;i<63;i+=3){
+      const x=frame[i], y=frame[i+1], z=frame[i+2];
+      out[i]   = (x*aff.cos - y*aff.sin) * aff.scale;
+      out[i+1] = (x*aff.sin + y*aff.cos) * aff.scale;
+      out[i+2] = z * aff.scale;
+    }
+    return out;
+  });
+}
+function timeWarp(seq){
+  const n = seq.length; const strength = (Math.random()-0.5)*0.6;
+  const out = [];
+  for (let i=0;i<n;i++){
+    const u = i/(n-1); let w = u + strength*Math.sin(Math.PI*u)*0.3; w = Math.min(1, Math.max(0, w));
+    const pos = w*(n-1); const lo = Math.floor(pos), hi = Math.min(n-1, lo+1), a = pos-lo;
+    out.push(seq[lo].map((v,idx) => v + (seq[hi][idx]-v)*a));
+  }
+  return out;
+}
+function jitter(seq, sigma=0.01){ return seq.map(frame => frame.map(v => v + (Math.random()*2-1)*sigma)); }
+function augmentRaw(seq){ return jitter(timeWarp(applyAffine(seq, randomAffine()))); }
+
+// ================= mediapipe =================
+let modelLoading = false;
+let modelReady = false;
+
+async function initHandLandmarker(){
+  if (handLandmarker) return;
+  if (modelLoading) {
+    while (modelLoading) { await sleep(100); }
+    return;
+  }
+  modelLoading = true;
+
+  try {
+    await ensureMediaPipeVision();
+  } catch(e) {
+    console.warn("ensureMediaPipeVision error:", e);
+  }
+
+  if (!FilesetResolver || !HandLandmarker) {
+    modelLoading = false;
+    console.warn("MediaPipe FilesetResolver/HandLandmarker not ready yet.");
+    return;
+  }
+
+  // 1. Try local bundled assets from app server (zero internet needed)
+  try {
+    console.log("Loading MediaPipe HandLandmarker from local assets (./wasm)...");
+    const vision = await FilesetResolver.forVisionTasks("./wasm");
+    try {
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "./models/hand_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO", numHands: 1
+      });
+      console.log("Loaded local MediaPipe HandLandmarker with GPU delegate");
+    } catch(gpuErr) {
+      console.warn("GPU delegate unavailable, using CPU delegate:", gpuErr);
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "./models/hand_landmarker.task",
+          delegate: "CPU"
+        },
+        runningMode: "VIDEO", numHands: 1
+      });
+      console.log("Loaded local MediaPipe HandLandmarker with CPU delegate");
+    }
+    modelReady = true;
+    modelLoading = false;
+    setStatus(true, '3D hand model ready');
+    return;
+  } catch(localErr) {
+    console.warn("Local assets load failed, trying Google CDN fallback:", localErr);
+  }
+
+  // 2. Fallback: Google CDN
+  try {
+    console.log("Loading MediaPipe HandLandmarker from CDN...");
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    try {
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO", numHands: 1
+      });
+      console.log("Loaded CDN MediaPipe HandLandmarker with GPU delegate");
+    } catch(cdnGpuErr) {
+      console.warn("CDN GPU delegate failed, using CPU delegate:", cdnGpuErr);
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "CPU"
+        },
+        runningMode: "VIDEO", numHands: 1
+      });
+      console.log("Loaded CDN MediaPipe HandLandmarker with CPU delegate");
+    }
+    modelReady = true;
+    modelLoading = false;
+    setStatus(true, '3D hand model ready');
+  } catch(cdnErr) {
+    modelLoading = false;
+    console.error("All MediaPipe load attempts failed:", cdnErr);
+    throw new Error('Failed to load 3D hand model: ' + (cdnErr.message || cdnErr));
+  }
+}
+
+// Automatically start pre-loading the 3D model in background on page load
+setTimeout(() => {
+  initHandLandmarker().catch(err => console.warn('Preload warning:', err));
+}, 100);
+
+function openSettings() {
+  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    window.flutter_inappwebview.callHandler('openAppSettings');
+  }
+}
+window.openSettings = openSettings;
+
+function sendFlutterBridge(payload) {
+  const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    try {
+      window.flutter_inappwebview.callHandler('FingerSpeakBridge', json);
+    } catch(e) {}
+  }
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage(json, '*');
+    } catch(e) {}
+  }
+}
+window.sendFlutterBridge = sendFlutterBridge;
+
+let animFrameId = null;
+async function attachStream(stream) {
+  video.srcObject = stream;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('autoplay', '');
+  video.setAttribute('muted', '');
+  
+  await new Promise(res => {
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      res();
+    } else {
+      const onPlaying = () => {
+        video.removeEventListener('playing', onPlaying);
+        res();
+      };
+      video.addEventListener('playing', onPlaying);
+      video.onloadedmetadata = () => {
+        video.play().catch(() => {});
+      };
+      setTimeout(res, 800);
+    }
+  });
+  
+  try {
+    await video.play();
+  } catch(e) {
+    console.warn('video.play warning:', e);
+  }
+
+  overlay.width = video.videoWidth || 640;
+  overlay.height = video.videoHeight || 480;
+
+  const startOverlay = document.getElementById('startOverlay');
+  if (startOverlay) startOverlay.style.display = 'none';
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
+
+  setStatus(true, handLandmarker ? 'tracking' : 'camera active');
+  running = true;
+  lastVideoTime = -1;
+  lastLandmarkTimestamp = 0;
+
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  animFrameId = requestAnimationFrame(renderLoop);
+}
+
+async function startCamera(){
+  const btn = document.getElementById('startBtn');
+  if (btn) {
+    btn.textContent = 'Starting camera…';
+    btn.disabled = true;
+  }
+  const errorMsg = document.getElementById('cameraErrorMessage');
+  if (errorMsg) errorMsg.style.display = 'none';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+    if (legacyGetUserMedia) {
+      return new Promise((resolve, reject) => {
+        legacyGetUserMedia.call(navigator, { video: true, audio: false }, (stream) => {
+          attachStream(stream).then(() => {
+            warmupVoices();
+            const wizBtn = document.getElementById('wizardStartBtn');
+            if (wizBtn) wizBtn.disabled = false;
+            initHandLandmarker().catch(err => console.warn('Background handLandmarker init error:', err));
+            resolve();
+          }).catch(reject);
+        }, (err) => {
+          if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+          setStatus(false, 'camera error: ' + (err.message || err));
+          if (errorMsg) {
+            errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera access failed: ' + (err.message || err) + '</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
+            errorMsg.style.display = 'block';
+          }
+          reject(err);
+        });
+      });
+    }
+    if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+    const err = new Error('Camera access (getUserMedia) not supported or blocked by webview origin security policy.');
+    setStatus(false, 'camera error: ' + err.message);
+    if (errorMsg) {
+      errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera access not supported. Please ensure Camera permission is enabled:</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
+      errorMsg.style.display = 'block';
+    }
+    throw err;
+  }
+
+  // Clean up any existing stream
+  if (video.srcObject) {
+    try {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    } catch(e) {}
+    video.srcObject = null;
+  }
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+
+  let stream = null;
+  // 1. Try mobile front camera with ideal constraints
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+  } catch(e1) {
+    console.warn('User facingMode ideal getUserMedia failed, retrying simple user:', e1);
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false
+      });
+    } catch(e2) {
+      console.warn('Simple user facingMode failed, retrying generic video:', e2);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch(e3) {
+        console.error('All getUserMedia attempts failed:', e3);
+        if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+        setStatus(false, 'camera error: ' + (e3.message || e3));
+        if (errorMsg) {
+          errorMsg.innerHTML = '<div style="margin-bottom:8px;">Camera permission was denied: ' + (e3.name || '') + ' ' + (e3.message || e3) + '</div><button class="btn small" style="background:#4FD1C5; color:#08201D;" onclick="openSettings()">Open iOS Settings</button>';
+          errorMsg.style.display = 'block';
+        }
+        throw e3;
+      }
+    }
+  }
+
+  if (!stream) {
+    if (btn) { btn.textContent = 'Enable camera'; btn.disabled = false; }
+    throw new Error('Could not obtain video stream from device camera.');
+  }
+
+  await attachStream(stream);
+  warmupVoices();
+  const wizBtn = document.getElementById('wizardStartBtn');
+  if (wizBtn) wizBtn.disabled = false;
+
+  // Initialize MediaPipe model in background once camera stream is active
+  initHandLandmarker().catch(err => console.warn('Background handLandmarker init error:', err));
+}
+window.startCamera = startCamera;
+function setStatus(ok, text){
+  document.getElementById('statusDot').className = 'dot ' + (ok ? 'live' : 'off');
+  document.getElementById('statusText').textContent = text;
+}
+
+// ================= render loop (throttled to ~22 FPS & 2nd-frame inference) =================
+let frameCount = 0, lastFpsTime = performance.now();
+let lastHandSeenTime = 0;
+let lastProcessTime = 0;
+let renderFrameCounter = 0;
+const TARGET_FRAME_INTERVAL_MS = 45; // Throttle to ~22 FPS for battery and thermal efficiency
+
+function renderLoop(){
+  if (!running) return;
+  const now = performance.now();
+
+  try {
+    if (now - lastProcessTime >= TARGET_FRAME_INTERVAL_MS && 
+        handLandmarker && 
+        video && 
+        video.readyState >= 2 && 
+        video.videoWidth > 0 && 
+        !video.paused && 
+        !video.ended) {
+
+      // Guarantee strictly increasing timestamps required by MediaPipe Tasks Vision
+      const frameTimestamp = (now > lastLandmarkTimestamp) ? now : (lastLandmarkTimestamp + 1);
+      lastLandmarkTimestamp = frameTimestamp;
+      lastProcessTime = now;
+      lastVideoTime = video.currentTime;
+      renderFrameCounter++;
+
+      const result = handLandmarker.detectForVideo(video, frameTimestamp);
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+
+      if (result && result.landmarks && result.landmarks.length > 0){
+        lastHandSeenTime = now;
+        if (now - (window._lastHandDetectedTime || 0) > 600) {
+          window._lastHandDetectedTime = now;
+          sendFlutterBridge({ type: 'hand_detected' });
+        }
+        const lm = result.landmarks[0];
+        drawLandmarks(lm);
+        currentRawFrame = flattenLandmarks(lm);
+        const stamped = { t: now, feat: currentRawFrame };
+
+        if (recording) recording.frames.push(stamped);
+
+        liveBuffer.push(stamped);
+        const cutoff = now - LIVE_BUFFER_MAX_MS;
+        while (liveBuffer.length && liveBuffer[0].t < cutoff) liveBuffer.shift();
+
+        if (!model && !liveMode){
+          document.getElementById('currentGesture').textContent = 'Hand tracked (21 3D points) · Ready';
+          pushVitals(0.9);
+        }
+
+        // 2. Process gesture recognition every 2nd frame with minimum interval
+        if (model && renderFrameCounter % 2 === 0 && now - lastInferenceAt > INFERENCE_INTERVAL_MS){
+          const rawSeq = resampleSequence(liveBuffer, SEQ_LEN, CAPTURE_WINDOW_MS);
+          if (rawSeq){
+            lastInferenceAt = now;
+            if (liveMode) runInference(rawSeq); else previewInference(rawSeq);
+          }
+        }
+      } else {
+        currentRawFrame = null;
+        if (now - lastHandSeenTime > 350){
+          liveBuffer = [];
+          document.getElementById('currentGesture').textContent = '— no hand detected —';
+          pushVitals(0);
+          if (liveMode) handleNoHandFrame();
+        }
+      }
+    }
+  } catch(loopErr) {
+    console.warn('[renderLoop tick warning]:', loopErr);
+  }
+
+  frameCount++;
+  if (now - lastFpsTime > 1000){
+    const fpsEl = document.getElementById('fpsReadout');
+    if (fpsEl) fpsEl.textContent = frameCount + ' fps';
+    frameCount = 0; lastFpsTime = now;
+  }
+  if (running) {
+    animFrameId = requestAnimationFrame(renderLoop);
+  }
+}
+
+// 3. Keep camera active on mobile without breaking iOS WebRTC tracks
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && running && video && video.srcObject) {
+    video.play().catch(() => {});
+  }
+});
+
+function stopCamera(){
+  running = false;
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  if (video && video.srcObject) {
+    try {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    } catch(e) {}
+    video.srcObject = null;
+  }
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  setStatus(false, 'camera stopped');
+  const startOverlay = document.getElementById('startOverlay');
+  if (startOverlay) startOverlay.style.display = 'flex';
+}
+window.stopStudioTracking = stopCamera;
+
+const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+function drawLandmarks(lm){
+  octx.strokeStyle = 'rgba(79,209,197,0.55)'; octx.lineWidth = 2;
+  for (const [a,b] of HAND_CONNECTIONS){
+    octx.beginPath(); octx.moveTo(lm[a].x*overlay.width, lm[a].y*overlay.height);
+    octx.lineTo(lm[b].x*overlay.width, lm[b].y*overlay.height); octx.stroke();
+  }
+  for (const p of lm){
+    octx.beginPath(); octx.arc(p.x*overlay.width, p.y*overlay.height, 3.2, 0, 7);
+    octx.fillStyle = '#F2A65A'; octx.fill();
+  }
+}
+
+// ================= gesture list UI =================
+function renderGestureList(){
+  const list = document.getElementById('gestureList');
+  list.innerHTML = '';
+  gestures.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'gesture-row';
+    row.innerHTML = `
+      <div class="col name"><label>GESTURE</label>
+        <input type="text" value="${esc(g.name)}" data-id="${g.id}" data-field="name" ${g.protected?'readonly':''}></div>
+      <div class="col phrase"><label>SPOKEN PHRASE</label>
+        <input type="text" value="${esc(g.phrase)}" placeholder="${g.name==='Rest' ? '(no phrase — neutral state)' : 'What FingerSpeak says'}" data-id="${g.id}" data-field="phrase" ${g.protected?'disabled':''}></div>
+      <div class="col" style="align-items:center;"><label>SAMPLES</label>
+        <div class="sample-count ${g.samples.length>=REPS_PER_GESTURE ? 'ready':''}">${g.samples.length} / ${REPS_PER_GESTURE}</div></div>
+      <button class="btn small" data-record="${g.id}">Record</button>
+      ${g.protected
+        ? '<span class="protected-tag">protected</span>'
+        : `<button class="remove-x" data-remove="${g.id}" title="Remove gesture">✕</button>`}
+    `;
+    list.appendChild(row);
+  });
+  const totalSessions = new Set(gestures.flatMap(g => g.samples.map(s => s.session))).size || 1;
+  const totalSamples = gestures.reduce((s,g) => s+g.samples.length, 0);
+  document.getElementById('sessionNote').textContent = `${totalSessions} session${totalSessions===1?'':'s'} recorded · ${totalSamples} total samples`;
+  updateTrainAvailability();
+}
+
+document.getElementById('gestureList').addEventListener('input', (e) => {
+  const id = e.target.dataset.id, field = e.target.dataset.field;
+  if (!id) return;
+  const g = gestures.find(g => g.id === id);
+  if (g && !g.protected) g[field] = e.target.value;
+});
+document.getElementById('gestureList').addEventListener('click', async (e) => {
+  if (e.target.dataset.record){
+    const g = gestures.find(g => g.id === e.target.dataset.record);
+    await manualRecord(g, e.target);
+  }
+  if (e.target.dataset.remove){
+    const g = gestures.find(g => g.id === e.target.dataset.remove);
+    if (g && !g.protected){ gestures = gestures.filter(x => x.id !== g.id); renderGestureList(); }
+  }
+});
+document.getElementById('addGestureBtn').addEventListener('click', () => {
+  const name = prompt('Gesture name (e.g. "Thumb curl", "Pain")');
+  if (!name) return;
+  const phrase = prompt('What should FingerSpeak say when it detects this?') || '';
+  gestures.push({ id: cid(), name, phrase, samples: [], icon: guessIcon(name) });
+  renderGestureList();
+});
+document.getElementById('newSessionBtn').addEventListener('click', () => {
+  currentSessionId = cid();
+  sessionCount++;
+  alert('New calibration session started. Recording under different conditions now (lighting, distance, hand position) is what makes the held-out evaluation meaningful.');
+  renderGestureList();
+});
+
+function updateTrainAvailability(){
+  const ready = gestures.every(g => g.samples.length >= MIN_SAMPLES_TO_TRAIN) && gestures.length >= 2;
+  document.getElementById('trainBtn').disabled = !ready;
+  document.getElementById('trainStatus').textContent = ready
+    ? 'Ready to train.'
+    : `Need at least ${MIN_SAMPLES_TO_TRAIN} samples per gesture (${gestures.filter(g=>g.samples.length<MIN_SAMPLES_TO_TRAIN).map(g=>g.name).join(', ')} still short). Use guided calibration below.`;
+}
+
+// ================= burst capture + quality rejection =================
+async function captureBurst(){
+  if (recording) return { ok:false, reason:'Already recording.' };
+  recording = { frames: [] };
+  await sleep(CAPTURE_WINDOW_MS + 50);
+  const frames = recording.frames;
+  recording = null;
+  const rawSeq = resampleSequence(frames, SEQ_LEN, CAPTURE_WINDOW_MS);
+  if (!rawSeq) return { ok:false, reason:'No hand detected during capture — retry.' };
+
+  const expectedFrames = Math.max(3, Math.round((CAPTURE_WINDOW_MS/1000) * 12));
+  const coverage = Math.min(1, frames.length / expectedFrames);
+  let avgScale = 0;
+  for (const f of rawSeq){
+    const wrist=[f[0],f[1],f[2]], mid=[f[27],f[28],f[29]];
+    avgScale += Math.hypot(mid[0]-wrist[0], mid[1]-wrist[1], mid[2]-wrist[2]);
+  }
+  avgScale /= rawSeq.length;
+
+  let reason = null;
+  if (coverage < 0.2) reason = 'Hand tracking was too brief — keep your hand in frame and retry.';
+  else if (avgScale < 0.015) reason = 'Hand is too far from camera — move slightly closer and retry.';
+  else if (avgScale > 0.65) reason = 'Hand is too close to camera — move back slightly and retry.';
+
+  if (reason) return { ok:false, reason };
+  return { ok:true, rawSeq, coverage };
+}
+
+function showCaptureQuality(msg, ok){
+  const el = document.getElementById('captureQuality');
+  el.textContent = msg;
+  el.className = 'capture-quality ' + (ok ? 'ok' : 'bad');
+}
+
+async function manualRecord(gesture, btn){
+  if (!video.srcObject){ alert('Start the camera first.'); return; }
+  if (wizardActive) return;
+  btn.textContent = '● rec…'; btn.disabled = true;
+  const result = await captureBurst();
+  btn.disabled = false; btn.textContent = 'Record';
+  if (!result.ok){ showCaptureQuality(result.reason, false); return; }
+  gesture.samples.push({ raw: result.rawSeq, session: currentSessionId });
+  drawMotionPreview(result.rawSeq, gesture);
+  showCaptureQuality(`Captured — tracking coverage ${(result.coverage*100).toFixed(0)}%.`, true);
+  renderGestureList();
+  autoSaveProfile();
+}
+
+// ================= guided calibration wizard =================
+const wizardOverlay = document.getElementById('wizardOverlay');
+document.getElementById('wizardStartBtn').addEventListener('click', runWizard);
+document.getElementById('wizardCancelBtn').addEventListener('click', () => { wizardActive = false; });
+
+function showWizard(title, sub, count){
+  wizardOverlay.style.display = 'flex';
+  document.getElementById('wizardTitle').textContent = title;
+  document.getElementById('wizardSub').textContent = sub;
+  document.getElementById('wizardCount').textContent = count ?? '';
+  document.getElementById('wizardCount').style.display = count ? 'block' : 'none';
+}
+function hideWizard(){ wizardOverlay.style.display = 'none'; }
+function setWizardProgress(done, total){
+  const el = document.getElementById('wizardProgress'); el.innerHTML = '';
+  for (let i=0;i<total;i++){ const d=document.createElement('div'); d.className='seg'+(i<done?' done':''); el.appendChild(d); }
+}
+
+async function runWizard(){
+  if (!video.srcObject){ alert('Start the camera first.'); return; }
+  wizardActive = true;
+  document.getElementById('wizardStartBtn').disabled = true;
+  for (const g of gestures){
+    while (g.samples.length < REPS_PER_GESTURE && wizardActive){
+      setWizardProgress(g.samples.length, REPS_PER_GESTURE);
+      for (let c=3; c>0 && wizardActive; c--){
+        showWizard(`Get ready: ${g.name}`, `Rep ${g.samples.length+1} of ${REPS_PER_GESTURE}`, c);
+        await sleep(650);
+      }
+      if (!wizardActive) break;
+      showWizard(`${g.name} — capturing…`, 'hold / perform now', '●');
+      const result = await captureBurst();
+      if (!wizardActive) break;
+      if (result.ok){
+        g.samples.push({ raw: result.rawSeq, session: currentSessionId });
+        drawMotionPreview(result.rawSeq, g);
+        renderGestureList();
+        autoSaveProfile();
+        showWizard('Captured ✓', `${g.samples.length} / ${REPS_PER_GESTURE}`, '');
+      } else {
+        showWizard(result.reason, '', '');
+      }
+      await sleep(700);
+    }
+  }
+  wizardActive = false;
+  hideWizard();
+  document.getElementById('wizardStartBtn').disabled = false;
+  renderGestureList();
+  autoSaveProfile();
+}
+
+// ================= motion preview =================
+function drawMotionPreview(rawSeq, gesture){
+  const canvas = document.getElementById('motionPreview');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.clientWidth * devicePixelRatio; canvas.height = canvas.clientHeight * devicePixelRatio;
+  const w = canvas.width, h = canvas.height; ctx.clearRect(0,0,w,h);
+  const xs = rawSeq.map(f => f[24]), ys = rawSeq.map(f => f[25]); // landmark 8 (index tip) => idx 24,25
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const pad = 12 * devicePixelRatio;
+  const toXY = (f) => {
+    const nx = maxX-minX > 1e-4 ? (f[24]-minX)/(maxX-minX) : 0.5;
+    const ny = maxY-minY > 1e-4 ? (f[25]-minY)/(maxY-minY) : 0.5;
+    return [pad + nx*(w-2*pad), pad + ny*(h-2*pad)];
+  };
+  ctx.strokeStyle = '#F2A65A'; ctx.lineWidth = 2*devicePixelRatio;
+  ctx.beginPath(); rawSeq.forEach((f,i) => { const [x,y]=toXY(f); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke();
+  rawSeq.forEach((f,i) => {
+    const [x,y]=toXY(f);
+    ctx.beginPath(); ctx.arc(x,y, i===rawSeq.length-1?4*devicePixelRatio:2*devicePixelRatio, 0, 7);
+    ctx.fillStyle = i===rawSeq.length-1 ? '#4FD1C5' : 'rgba(79,209,197,0.5)'; ctx.fill();
+  });
+  document.getElementById('motionPreviewLabel').textContent = `last capture: "${gesture.name}" — index fingertip path (bright = end)`;
+}
+
+// ================= export / import profile =================
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = JSON.stringify({ version: 2, gestures });
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fingerspeak-profile.json'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  try{
+    const parsed = JSON.parse(await file.text());
+    if (!parsed.gestures || !Array.isArray(parsed.gestures)) throw new Error('not a FingerSpeak profile');
+    gestures = parsed.gestures.map(g => ({
+      id: cid(), name: g.name, phrase: g.phrase, samples: g.samples || [],
+      icon: g.icon || guessIcon(g.name), protected: g.name === 'Rest'
+    }));
+    if (!gestures.some(g => g.name === 'Rest')){
+      gestures.unshift({ id: cid(), name:'Rest', phrase:'', samples:[], icon:'🖐️', protected:true });
+    }
+    renderGestureList();
+    document.getElementById('trainStatus').textContent = 'Profile imported. Click "Train model" to build a classifier from it.';
+  } catch(err){ alert('Could not import profile: ' + err.message); }
+  e.target.value = '';
+});
+
+// ================= classifier baselines: DTW k-NN and nearest-prototype =================
+// Both operate directly on the same featurized frames (buildModelInput output) the BiGRU
+// uses, so all three models are compared on identical input — the only thing that differs
+// is how each turns a sequence into a class prediction.
+function euclid(a, b){ let s=0; for (let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; } return Math.sqrt(s); }
+function dtwDistance(seqA, seqB){
+  const n = seqA.length, m = seqB.length;
+  let prev = new Array(m+1).fill(Infinity), curr = new Array(m+1).fill(Infinity);
+  prev[0] = 0;
+  for (let i=1;i<=n;i++){
+    curr[0] = Infinity;
+    for (let j=1;j<=m;j++){
+      const cost = euclid(seqA[i-1], seqB[j-1]);
+      curr[j] = cost + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[m];
+}
+function summaryVector(seq){
+  const dims = seq[0].length;
+  const mean = new Array(dims).fill(0);
+  for (const f of seq) for (let d=0; d<dims; d++) mean[d] += f[d]/seq.length;
+  const std = new Array(dims).fill(0);
+  for (const f of seq) for (let d=0; d<dims; d++) std[d] += (f[d]-mean[d])**2 / seq.length;
+  for (let d=0; d<dims; d++) std[d] = Math.sqrt(std[d]);
+  return mean.concat(std);
+}
+
+// registry of trained baseline models, populated by trainAllModels()
+let baselineModels = {
+  dtw: { trainSeqs: [], trainLabels: [] },
+  prototype: { prototypes: [], spreads: [] } // per-class centroid + avg within-class distance
+};
+let oodPrototypes = null; // per-class {centroid, spread} built from BiGRU training data too, for OOD rejection regardless of active model
+
+function trainDTW(trainSeqsByClass){
+  baselineModels.dtw.trainSeqs = [];
+  baselineModels.dtw.trainLabels = [];
+  trainSeqsByClass.forEach((seqs, classIdx) => {
+    seqs.forEach(seq => { baselineModels.dtw.trainSeqs.push(seq); baselineModels.dtw.trainLabels.push(classIdx); });
+  });
+}
+function classifyDTW(querySeq){
+  const dists = baselineModels.dtw.trainSeqs.map(s => dtwDistance(querySeq, s));
+  const order = dists.map((d,i)=>[d,i]).sort((a,b)=>a[0]-b[0]).slice(0, DTW_K);
+  const votes = {};
+  for (const [d,i] of order){ const c = baselineModels.dtw.trainLabels[i]; votes[c] = (votes[c]||0) + 1/(1+d); }
+  const entries = Object.entries(votes).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,[,v])=>s+v, 0) || 1;
+  const probs = new Array(gestures.length).fill(0);
+  entries.forEach(([c,v]) => { probs[Number(c)] = v/total; });
+  return probs;
+}
+
+function trainPrototype(trainSeqsByClass){
+  baselineModels.prototype.prototypes = [];
+  baselineModels.prototype.spreads = [];
+  trainSeqsByClass.forEach(seqs => {
+    const summaries = seqs.map(summaryVector);
+    const dims = summaries[0].length;
+    const centroid = new Array(dims).fill(0);
+    for (const s of summaries) for (let d=0; d<dims; d++) centroid[d] += s[d]/summaries.length;
+    const spread = summaries.reduce((acc,s) => acc + euclid(s, centroid), 0) / summaries.length;
+    baselineModels.prototype.prototypes.push(centroid);
+    baselineModels.prototype.spreads.push(spread || 0.05);
+  });
+}
+function classifyPrototype(querySeq){
+  const q = summaryVector(querySeq);
+  const dists = baselineModels.prototype.prototypes.map(p => euclid(q, p));
+  const sims = dists.map(d => 1/(1+d));
+  const total = sims.reduce((a,b)=>a+b,0) || 1;
+  return sims.map(s => s/total);
+}
+
+function buildOODPrototypes(trainSeqsByClass){
+  oodPrototypes = trainSeqsByClass.map(seqs => {
+    const summaries = seqs.map(summaryVector);
+    const dims = summaries[0].length;
+    const centroid = new Array(dims).fill(0);
+    for (const s of summaries) for (let d=0; d<dims; d++) centroid[d] += s[d]/summaries.length;
+    const spread = summaries.reduce((acc,s) => acc + euclid(s, centroid), 0) / summaries.length;
+    return { centroid, spread: spread || 0.05 };
+  });
+}
+// returns true if querySeq is "in distribution" for at least one known class — used to reject
+// confident-but-wrong predictions on movements the model was never calibrated on
+function isInDistribution(querySeq){
+  if (!oodPrototypes) return true;
+  const q = summaryVector(querySeq);
+  for (const { centroid, spread } of oodPrototypes){
+    if (euclid(q, centroid) <= spread * OOD_REJECT_MULTIPLIER) return true;
+  }
+  return false;
+}
+
+// ================= model architecture (shared by train + load) =================
+function buildModelArchitecture(seqLen, featureLen, numClasses){
+  const m = tf.sequential();
+  m.add(tf.layers.bidirectional({ layer: tf.layers.gru({ units: 24, returnSequences: false }), mergeMode: 'concat', inputShape: [seqLen, featureLen] }));
+  m.add(tf.layers.dropout({ rate: 0.3 }));
+  m.add(tf.layers.dense({ units: 20, activation: 'relu' }));
+  m.add(tf.layers.dense({ units: numClasses, activation: 'softmax' }));
+  m.compile({ optimizer: tf.train.adam(0.008), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+  return m;
+}
+
+// ================= session-aware stratified split =================
+function stratifiedSplit(){
+  const trainX=[], trainY=[], valX=[], valY=[];
+  const trainSeqsByClass = gestures.map(() => []); // unaugmented, per-class — used by DTW/prototype/OOD
+  const valSeqsByClass = gestures.map(() => []);
+  let allSessionBased = true;
+  gestures.forEach((g, classIdx) => {
+    const bySession = {};
+    g.samples.forEach(s => { (bySession[s.session] = bySession[s.session] || []).push(s); });
+    const sessionIds = Object.keys(bySession);
+    let valSet, trainSet;
+    if (sessionIds.length >= 2){
+      const sorted = Object.entries(bySession).sort((a,b) => a[1].length - b[1].length);
+      valSet = sorted[0][1];
+      trainSet = g.samples.filter(s => !valSet.includes(s));
+    } else {
+      allSessionBased = false;
+      const shuffled = [...g.samples].sort(() => Math.random()-0.5);
+      const valCount = shuffled.length >= 4 ? Math.max(1, Math.round(shuffled.length*0.2)) : 0;
+      valSet = shuffled.slice(0, valCount);
+      trainSet = shuffled.slice(valCount);
+    }
+    for (const s of valSet){
+      const feat = buildModelInput(s.raw);
+      valX.push(feat); valY.push(classIdx); valSeqsByClass[classIdx].push(feat);
+    }
+    for (const s of trainSet){
+      const feat = buildModelInput(s.raw);
+      trainX.push(feat); trainY.push(classIdx); trainSeqsByClass[classIdx].push(feat);
+      for (let a=0; a<AUG_PER_SAMPLE; a++){ trainX.push(buildModelInput(augmentRaw(s.raw))); trainY.push(classIdx); }
+    }
+  });
+  return { trainX, trainY, valX, valY, trainSeqsByClass, valSeqsByClass, allSessionBased };
+}
+
+// ================= training =================
+document.getElementById('trainBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('trainStatus');
+  document.getElementById('qualityPanel').classList.remove('show');
+  document.getElementById('noEvalNote').style.display = 'block';
+  document.getElementById('compareTable').innerHTML = '';
+  statusEl.textContent = 'Building augmented training set…';
+  await tf.nextFrame();
+
+  const { trainX, trainY, valX, valY, trainSeqsByClass, valSeqsByClass, allSessionBased } = stratifiedSplit();
+  const xTrain = tf.tensor3d(trainX);
+  const yTrain = tf.oneHot(tf.tensor1d(trainY, 'int32'), gestures.length);
+  const hasVal = valX.length >= gestures.length;
+  const xVal = hasVal ? tf.tensor3d(valX) : null;
+  const yVal = hasVal ? tf.oneHot(tf.tensor1d(valY, 'int32'), gestures.length) : null;
+
+  // OOD prototypes built from real (unaugmented) training sequences — used at inference time
+  // regardless of which model is active, so a genuinely novel movement gets rejected instead
+  // of confidently misclassified as the nearest known gesture.
+  buildOODPrototypes(trainSeqsByClass);
+
+  if (model) model.dispose();
+  model = buildModelArchitecture(SEQ_LEN, FEATURE_LEN, gestures.length);
+
+  statusEl.textContent = `Training bidirectional GRU on ${trainX.length} augmented sequences (${gestures.length} classes, ${FEATURE_LEN} features/frame)…`;
+
+  let bestValLoss = Infinity, patienceCounter = 0, bestWeights = null, stoppedEpoch = MAX_EPOCHS;
+  for (let epoch = 0; epoch < MAX_EPOCHS; epoch++){
+    const fitArgs = { epochs: 1, batchSize: Math.min(24, trainX.length), shuffle: true, verbose: 0 };
+    if (hasVal) fitArgs.validationData = [xVal, yVal];
+    const h = await model.fit(xTrain, yTrain, fitArgs);
+    const trainAcc = h.history.acc ? h.history.acc[0] : h.history.accuracy[0];
+    if (hasVal){
+      const valLoss = h.history.val_loss[0];
+      const valAcc = h.history.val_acc ? h.history.val_acc[0] : h.history.val_accuracy[0];
+      if (epoch % 5 === 0) statusEl.textContent = `Epoch ${epoch+1}/${MAX_EPOCHS} — train acc ${trainAcc.toFixed(2)}, val acc ${valAcc.toFixed(2)}`;
+      if (valLoss < bestValLoss - 1e-4){
+        bestValLoss = valLoss; patienceCounter = 0;
+        bestWeights?.forEach(w => w.dispose());
+        bestWeights = model.getWeights().map(w => w.clone());
+      } else {
+        patienceCounter++;
+        if (patienceCounter >= EARLY_STOP_PATIENCE){ stoppedEpoch = epoch+1; break; }
+      }
+    } else {
+      if (epoch % 5 === 0) statusEl.textContent = `Epoch ${epoch+1}/${MAX_EPOCHS} — train acc ${trainAcc.toFixed(2)} (no validation split)`;
+      if (epoch > 60){ stoppedEpoch = epoch+1; break; }
+    }
+    await tf.nextFrame();
+  }
+  if (bestWeights){ model.setWeights(bestWeights); bestWeights.forEach(w => w.dispose()); }
+
+  statusEl.textContent = 'Training baseline models (DTW, nearest-prototype) for comparison…';
+  await tf.nextFrame();
+  trainDTW(trainSeqsByClass);
+  trainPrototype(trainSeqsByClass);
+
+  let accSummary = '';
+  if (hasVal){
+    const preds = tf.tidy(() => model.predict(xVal).argMax(-1).dataSync());
+    const trueLabels = yVal.argMax(-1).dataSync();
+    const matrix = Array.from({length: gestures.length}, () => new Array(gestures.length).fill(0));
+    for (let i=0;i<preds.length;i++) matrix[trueLabels[i]][preds[i]]++;
+    const correct = matrix.reduce((s,row,i) => s + row[i], 0);
+    const total = preds.length;
+    const acc = total ? correct/total : 0;
+    renderConfusionMatrix(matrix, gestures.map(g=>g.name));
+    renderMetricsTable(matrix, gestures.map(g=>g.name));
+    document.getElementById('qualityAcc').textContent = (acc*100).toFixed(0) + '%';
+    document.getElementById('qualityAccLabel').textContent = allSessionBased
+      ? 'INDEPENDENT-SESSION VALIDATION ACCURACY — tested on a held-out calibration session'
+      : 'SAME-SESSION VALIDATION ACCURACY — small sample from one sitting, treat as directional only';
+    document.getElementById('qualityPanel').classList.add('show');
+    document.getElementById('noEvalNote').style.display = 'none';
+    accSummary = ` ${allSessionBased ? 'Independent-session' : 'Same-session'} validation accuracy: ${(acc*100).toFixed(0)}% (stopped at epoch ${stoppedEpoch}).`;
+
+    // model comparison: evaluate all three approaches on the exact same held-out sequences
+    statusEl.textContent = 'Evaluating model comparison…';
+    await tf.nextFrame();
+    await runModelComparison(valSeqsByClass, xVal);
+  }
+
+  xTrain.dispose(); yTrain.dispose();
+  if (xVal){ xVal.dispose(); yVal.dispose(); }
+
+  buildProbBarsSkeleton();
+  statusEl.textContent = `Done.${accSummary} Switch to "Speak mode" to try it live.`;
+  document.getElementById('liveToggle').disabled = false;
+  document.getElementById('saveModelBtn').disabled = false;
+  document.getElementById('modelSelect').disabled = false;
+  sendFlutterBridge({
+    type: 'training_completed',
+    accSummary: accSummary || 'Training completed successfully'
+  });
+});
+
+async function runModelComparison(valSeqsByClass, xValTensor){
+  const results = {};
+  const labelNames = gestures.map(g=>g.name);
+  const numClasses = gestures.length;
+
+  // BiGRU: measure real predict() latency
+  {
+    const matrix = Array.from({length:numClasses}, () => new Array(numClasses).fill(0));
+    const t0 = performance.now();
+    let count = 0;
+    for (let c=0;c<numClasses;c++){
+      for (const seq of valSeqsByClass[c]){
+        const arr = tf.tidy(() => model.predict(tf.tensor3d([seq])).dataSync());
+        const pred = arr.indexOf(Math.max(...arr));
+        matrix[c][pred]++; count++;
+      }
+    }
+    const elapsed = performance.now() - t0;
+    results.bigru = { matrix, avgMs: count ? elapsed/count : 0 };
+  }
+  await tf.nextFrame();
+
+  // DTW k-NN
+  {
+    const matrix = Array.from({length:numClasses}, () => new Array(numClasses).fill(0));
+    const t0 = performance.now();
+    let count = 0;
+    for (let c=0;c<numClasses;c++){
+      for (const seq of valSeqsByClass[c]){
+        const probs = classifyDTW(seq);
+        const pred = probs.indexOf(Math.max(...probs));
+        matrix[c][pred]++; count++;
+      }
+    }
+    const elapsed = performance.now() - t0;
+    results.dtw = { matrix, avgMs: count ? elapsed/count : 0 };
+  }
+  await tf.nextFrame();
+
+  // nearest-prototype
+  {
+    const matrix = Array.from({length:numClasses}, () => new Array(numClasses).fill(0));
+    const t0 = performance.now();
+    let count = 0;
+    for (let c=0;c<numClasses;c++){
+      for (const seq of valSeqsByClass[c]){
+        const probs = classifyPrototype(seq);
+        const pred = probs.indexOf(Math.max(...probs));
+        matrix[c][pred]++; count++;
+      }
+    }
+    const elapsed = performance.now() - t0;
+    results.prototype = { matrix, avgMs: count ? elapsed/count : 0 };
+  }
+
+  renderComparisonTable(results, labelNames);
+}
+
+function accOf(matrix){
+  const correct = matrix.reduce((s,row,i)=>s+row[i],0);
+  const total = matrix.reduce((s,row)=>s+row.reduce((a,b)=>a+b,0),0);
+  return total ? correct/total : 0;
+}
+function renderComparisonTable(results, labelNames){
+  const rows = [
+    { key:'bigru', label:'Bidirectional GRU', note:'sequence neural net' },
+    { key:'dtw', label:`DTW k-NN (k=${DTW_K})`, note:'time-series distance' },
+    { key:'prototype', label:'Nearest-prototype', note:'mean±std centroid' },
+  ];
+  let html = '<tr><th>Model</th><th>Val. accuracy</th><th>Avg. latency</th><th>Notes</th></tr>';
+  let best = -1, bestKey = null;
+  for (const r of rows){ const a = accOf(results[r.key].matrix); if (a > best){ best = a; bestKey = r.key; } }
+  for (const r of rows){
+    const acc = accOf(results[r.key].matrix);
+    const ms = results[r.key].avgMs;
+    const isBest = r.key === bestKey;
+    html += `<tr style="${isBest ? 'color:var(--teal);font-weight:600;' : ''}">
+      <td>${esc(r.label)}${isBest ? ' ★' : ''}</td>
+      <td>${(acc*100).toFixed(0)}%</td>
+      <td>${ms.toFixed(2)} ms</td>
+      <td style="color:var(--text-dim);">${esc(r.note)}</td>
+    </tr>`;
+  }
+  document.getElementById('compareTable').innerHTML = html;
+}
+
+function renderConfusionMatrix(matrix, labels){
+  const table = document.getElementById('cmTable');
+  const rowMax = matrix.map(row => Math.max(1, ...row));
+  let html = '<tr><th></th>' + labels.map(l => `<th>${esc(l.slice(0,6))}</th>`).join('') + '</tr>';
+  matrix.forEach((row, i) => {
+    html += `<tr><th>${esc(labels[i].slice(0,6))}</th>` + row.map((v, j) => {
+      const alpha = v / rowMax[i];
+      const bg = i===j ? `rgba(79,209,197,${0.15+alpha*0.55})` : `rgba(232,106,106,${v? 0.1+alpha*0.35 : 0})`;
+      return `<td class="${i===j?'diag':''}" style="background:${bg}">${v}</td>`;
+    }).join('') + '</tr>';
+  });
+  table.innerHTML = html;
+}
+function renderMetricsTable(matrix, labels){
+  const n = labels.length;
+  const rows = matrix.map(r => r.reduce((a,b)=>a+b,0));
+  const cols = labels.map((_,j) => matrix.reduce((s,row)=>s+row[j],0));
+  let html = '<tr><th>Gesture</th><th>Precision</th><th>Recall</th><th>F1</th><th>n</th></tr>';
+  for (let i=0;i<n;i++){
+    const tp = matrix[i][i];
+    const precision = cols[i] ? tp/cols[i] : 0;
+    const recall = rows[i] ? tp/rows[i] : 0;
+    const f1 = (precision+recall) ? 2*precision*recall/(precision+recall) : 0;
+    html += `<tr><td>${esc(labels[i])}</td><td>${precision.toFixed(2)}</td><td>${recall.toFixed(2)}</td><td>${f1.toFixed(2)}</td><td>${rows[i]}</td></tr>`;
+  }
+  document.getElementById('metricsTable').innerHTML = html;
+}
+
+// ================= universal persistent storage (Flutter Native + localStorage + IndexedDB) =================
+const storageHelper = {
+  async set(key, value) {
+    // 1. Flutter InAppWebView native persistent storage (UserDefaults on iOS / SharedPreferences on Android)
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try {
+        const res = await window.flutter_inappwebview.callHandler('FingerSpeakStorage', { action: 'set', key: key, value: value });
+        if (res && res.ok) console.log('[Storage] Saved to native app storage:', key);
+      } catch(e) {
+        console.warn('Flutter storage set error:', e);
+      }
+    }
+    // 2. Mirror to browser localStorage
+    try {
+      localStorage.setItem(key, value);
+    } catch(e) {}
+    // 3. Mirror to IndexedDB
+    try {
+      await idbSet(key, value);
+    } catch(e) {}
+    return true;
+  },
+  async get(key) {
+    // 1. Query Flutter InAppWebView native persistent storage first
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try {
+        const res = await window.flutter_inappwebview.callHandler('FingerSpeakStorage', { action: 'get', key: key });
+        if (res && res.ok && res.value) {
+          console.log('[Storage] Retrieved from native app storage:', key);
+          return { value: res.value };
+        }
+      } catch(e) {
+        console.warn('Flutter storage get error:', e);
+      }
+    }
+    // 2. Fallback to localStorage
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null) return { value: v };
+    } catch(e) {}
+    // 3. Fallback to IndexedDB
+    try {
+      const v = await idbGet(key);
+      if (v !== null) return { value: v };
+    } catch(e) {}
+    return null;
+  }
+};
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open('NeuroBridgeAshaDB', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('store');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch(err) { reject(err); }
+  });
+}
+async function idbSet(key, val) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve) => {
+      const tx = db.transaction('store', 'readwrite');
+      tx.objectStore('store').put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch(e) { return false; }
+}
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve) => {
+      const tx = db.transaction('store', 'readonly');
+      const req = tx.objectStore('store').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
+async function autoSaveProfile() {
+  try {
+    const profileData = JSON.stringify({ version: 2, gestures, savedAt: Date.now() });
+    await storageHelper.set('fingerspeak_last_profile', profileData);
+  } catch(e) {}
+}
+
+async function autoLoadSavedProfile() {
+  try {
+    const res = await storageHelper.get('fingerspeak_last_profile');
+    if (res && res.value) {
+      const parsed = JSON.parse(res.value);
+      if (parsed.gestures && parsed.gestures.length >= 2) {
+        gestures = parsed.gestures;
+        renderGestureList();
+        console.log('[Profile] Restored gestures with calibration samples from storage.');
+      }
+    }
+  } catch(e) {}
+}
+
+async function autoLoadSavedModel(silent = false) {
+  const statusEl = document.getElementById('trainStatus');
+  try {
+    const wRes = await storageHelper.get('fingerspeak_model_weights');
+    const mRes = await storageHelper.get('fingerspeak_model_meta');
+    if (wRes && mRes && wRes.value && mRes.value) {
+      const weightsData = JSON.parse(wRes.value);
+      const meta = JSON.parse(mRes.value);
+      const numClasses = meta.gestures.length;
+      const m = buildModelArchitecture(meta.seqLen, meta.featureLen, numClasses);
+      const tensors = weightsData.map(w => tf.tensor(w.data, w.shape));
+      m.setWeights(tensors);
+      tensors.forEach(t => t.dispose());
+      if (model) model.dispose();
+      model = m;
+      baselineModels = { dtw: { trainSeqs: [], trainLabels: [] }, prototype: { prototypes: [], spreads: [] } };
+      oodPrototypes = null;
+      activeModelType = 'bigru';
+      const modelSelectEl = document.getElementById('modelSelect');
+      if (modelSelectEl) {
+        modelSelectEl.value = 'bigru';
+        modelSelectEl.disabled = false;
+      }
+      if (meta.gestures && meta.gestures.length >= 2) {
+        gestures = meta.gestures.map(g => ({
+          id: cid(), name: g.name, phrase: g.phrase, samples: [], icon: g.icon || guessIcon(g.name), protected: g.name === 'Rest'
+        }));
+        renderGestureList();
+      }
+      buildProbBarsSkeleton();
+      document.getElementById('liveToggle').disabled = false;
+      document.getElementById('saveModelBtn').disabled = false;
+      if (statusEl) {
+        statusEl.textContent = `✓ Active: Loaded saved neural model (${numClasses} gestures). Speak Mode ready!`;
+      }
+      console.log('[Model] Successfully restored neural model from device storage.');
+      return true;
+    }
+  } catch(err) {
+    console.warn('[Model] Could not load saved neural model:', err);
+    if (!silent && statusEl) statusEl.textContent = 'Could not load saved model: ' + err.message;
+  }
+
+  // Fallback: If gestures have samples from calibration profile, build instant prototype model
+  if (gestures && gestures.length >= 2 && gestures.some(g => g.samples && g.samples.length > 0)) {
+    try {
+      const trainSeqsByClass = gestures.map(g => g.samples.map(s => buildModelInput(s.raw)));
+      trainDTW(trainSeqsByClass);
+      trainPrototype(trainSeqsByClass);
+      buildOODPrototypes(trainSeqsByClass);
+      activeModelType = 'prototype';
+      document.getElementById('liveToggle').disabled = false;
+      buildProbBarsSkeleton();
+      if (statusEl) {
+        statusEl.textContent = '✓ Ready: Calibrated gestures active (Fast Prototype). Speak Mode ready!';
+      }
+      return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+// Automatic boot sequence: load profile, load saved model, and handle patient mode
+async function initSavedStorage() {
+  await autoLoadSavedProfile();
+  await autoLoadSavedModel(true);
+
+  // Check URL parameters for patient execution mode
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPatientMode = urlParams.has('patientMode') || urlParams.get('mode') === 'patient';
+  if (isPatientMode) {
+    console.log('[Mode] Initializing in Patient Execution Mode...');
+    if (!model) await autoLoadSavedModel(true);
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+      startBtn.textContent = 'Enable camera';
+    }
+  }
+}
+
+// Auto-load profile & model when page initializes
+setTimeout(initSavedStorage, 200);
+
+document.getElementById('saveModelBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('trainStatus');
+  if (!model){ return; }
+  statusEl.textContent = 'Saving model to device storage…';
+  try{
+    const weightsData = model.getWeights().map(w => ({ shape: w.shape, data: Array.from(w.dataSync()) }));
+    const meta = {
+      gestures: gestures.map(g => ({ name: g.name, phrase: g.phrase, icon: g.icon })),
+      featureLen: FEATURE_LEN, seqLen: SEQ_LEN, savedAt: Date.now(),
+      appVersion: '2.0', featureVersion: '3d-angle-motion-v1', modelVersion: 'bigru-24-v2'
+    };
+    const okW = await storageHelper.set('fingerspeak_model_weights', JSON.stringify(weightsData));
+    const okM = await storageHelper.set('fingerspeak_model_meta', JSON.stringify(meta));
+    await autoSaveProfile();
+    statusEl.textContent = (okW && okM) ? '✓ Model and gestures saved to device storage. Speak Mode ready!' : 'Save completed.';
+  } catch(err){
+    statusEl.textContent = 'Could not save model: ' + err.message;
+  }
+});
+document.getElementById('loadModelBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('trainStatus');
+  statusEl.textContent = 'Loading saved model…';
+  const success = await autoLoadSavedModel(false);
+  if (!success) {
+    statusEl.textContent = 'No saved model found in device storage yet. Please calibrate and train first.';
+  }
+});
+
+// ================= intent state machine + inference =================
+let activeModelType = 'bigru';
+document.getElementById('modelSelect').addEventListener('change', (e) => { activeModelType = e.target.value; });
+
+// reliability tracking — the metrics that actually matter for an AAC device more than accuracy
+let reliability = { falseActivations: 0, missedGestures: 0, latencies: [], sessionStart: null };
+function classifyActive(modelInput){
+  if (activeModelType === 'dtw') return classifyDTW(modelInput);
+  if (activeModelType === 'prototype') return classifyPrototype(modelInput);
+  return tf.tidy(() => Array.from(model.predict(tf.tensor3d([modelInput])).dataSync()));
+}
+
+function dwellMsFor(gesture){
+  const n = gesture.name.toLowerCase();
+  if (n.includes('emergency') || n.includes('urgent')) return 1400;
+  if (n.includes('pain')) return 1000;
+  return 650;
+}
+function setIntentBadge(state){
+  const el = document.getElementById('intentBadge');
+  el.textContent = state === 'WAIT_RELEASE' ? 'RELEASE' : (state === 'REJECTED' ? 'UNKNOWN' : state);
+  el.className = 'intent-badge ' + (state === 'REJECTED' ? 'WAIT_RELEASE' : state);
+}
+
+function previewInference(rawSeq){
+  const modelInput = buildModelInput(rawSeq);
+  const arr = classifyActive(modelInput);
+  const maxIdx = arr.indexOf(Math.max(...arr));
+  const inDist = isInDistribution(modelInput);
+  document.getElementById('currentGesture').textContent = inDist
+    ? `${gestures[maxIdx].name} (${(arr[maxIdx]*100).toFixed(0)}%)`
+    : `unrecognized movement`;
+  pushVitals(inDist ? arr[maxIdx] : 0);
+  updateProbBars(arr);
+}
+
+function runInference(rawSeq){
+  const modelInput = buildModelInput(rawSeq);
+  const arr = classifyActive(modelInput);
+  const maxIdx = arr.indexOf(Math.max(...arr));
+  const conf = arr[maxIdx];
+  const inDist = isInDistribution(modelInput);
+
+  document.getElementById('currentGesture').textContent = inDist
+    ? `${gestures[maxIdx].name} (${(conf*100).toFixed(0)}%)`
+    : `unrecognized movement — rejected`;
+  pushVitals(inDist ? conf : 0);
+  updateProbBars(arr);
+
+  const restIdx = gestures.findIndex(g => g.name === 'Rest');
+  // an out-of-distribution movement is treated exactly like Rest by the state machine — it
+  // can release a WAIT_RELEASE lock, but it can never itself become a CANDIDATE, regardless
+  // of how confident the underlying model's softmax happens to be
+  const isRestPrediction = maxIdx === restIdx || !inDist;
+
+  if (intentState === 'WAIT_RELEASE'){
+    if (isRestPrediction || conf < confidenceThreshold) restStreak++; else restStreak = 0;
+    updateConfidenceRing(1);
+    setIntentBadge('WAIT_RELEASE');
+    if (restStreak >= RELEASE_STREAK_NEEDED){ intentState = 'REST'; restStreak = 0; updateConfidenceRing(0); setIntentBadge('REST'); }
+    return;
+  }
+  if (intentState === 'REST'){
+    setIntentBadge('REST');
+    if (!isRestPrediction && conf >= confidenceThreshold){
+      intentState = 'CANDIDATE'; candidateIdx = maxIdx; candidateStart = performance.now();
+    }
+    updateConfidenceRing(0);
+    return;
+  }
+  if (intentState === 'CANDIDATE'){
+    setIntentBadge('CANDIDATE');
+    if (isRestPrediction || maxIdx !== candidateIdx || conf < confidenceThreshold){
+      intentState = 'REST'; candidateIdx = null; updateConfidenceRing(0);
+      return;
+    }
+    const elapsed = performance.now() - candidateStart;
+    const need = dwellMsFor(gestures[candidateIdx]);
+    updateConfidenceRing(Math.min(1, elapsed/need));
+    if (elapsed >= need){
+      const gesture = gestures[candidateIdx];
+      if (gesture.phrase){
+        speak(gesture.phrase); playChime(); flashCaption(gesture.phrase, gesture); logSpoken(gesture.phrase, gesture.name);
+        reliability.latencies.push(elapsed);
+        renderReliabilityTable();
+
+        // Send gesture event to Flutter bridge for Asha voice integration
+        sendFlutterBridge({
+          type: 'gesture_fired',
+          gesture: gesture.name,
+          phrase: gesture.phrase,
+          confidence: 0.95
+        });
+      }
+      intentState = 'WAIT_RELEASE'; restStreak = 0; candidateIdx = null; updateConfidenceRing(0);
+    }
+  }
+}
+
+function handleNoHandFrame(){
+  if (intentState === 'CANDIDATE'){ intentState = 'REST'; candidateIdx = null; updateConfidenceRing(0); setIntentBadge('REST'); }
+  else if (intentState === 'WAIT_RELEASE'){
+    restStreak++;
+    if (restStreak >= RELEASE_STREAK_NEEDED){ intentState = 'REST'; restStreak = 0; updateConfidenceRing(0); setIntentBadge('REST'); }
+  }
+}
+
+document.getElementById('liveToggle').addEventListener('click', async (e) => {
+  if (!model && (!baselineModels || !baselineModels.prototype || !baselineModels.prototype.prototypes || !baselineModels.prototype.prototypes.length)) {
+    const loaded = await autoLoadSavedModel(false);
+    if (!loaded) {
+      alert('No calibrated model or gestures found on this device yet. Please record gesture samples and train first.');
+      return;
+    }
+  }
+  liveMode = !liveMode;
+  e.target.textContent = liveMode ? 'Disable speak mode' : 'Enable speak mode';
+  e.target.classList.toggle('primary', liveMode);
+  intentState = 'REST'; candidateIdx = null; restStreak = 0; updateConfidenceRing(0); setIntentBadge('REST');
+  if (liveMode && !reliability.sessionStart) reliability.sessionStart = Date.now();
+  renderReliabilityTable();
+});
+
+// ================= reliability tracker UI =================
+document.getElementById('markFalseBtn').addEventListener('click', () => {
+  reliability.falseActivations++; renderReliabilityTable();
+});
+document.getElementById('markMissedBtn').addEventListener('click', () => {
+  reliability.missedGestures++; renderReliabilityTable();
+});
+document.getElementById('resetReliabilityBtn').addEventListener('click', () => {
+  reliability = { falseActivations: 0, missedGestures: 0, latencies: [], sessionStart: liveMode ? Date.now() : null };
+  renderReliabilityTable();
+});
+function median(arr){
+  if (!arr.length) return null;
+  const s = [...arr].sort((a,b)=>a-b);
+  const mid = Math.floor(s.length/2);
+  return s.length % 2 ? s[mid] : (s[mid-1]+s[mid])/2;
+}
+function renderReliabilityTable(){
+  const el = document.getElementById('reliabilityTable');
+  const hours = reliability.sessionStart ? Math.max((Date.now()-reliability.sessionStart)/3600000, 1/3600) : 0;
+  const falsePerHour = hours ? (reliability.falseActivations/hours) : 0;
+  const med = median(reliability.latencies);
+  const durationStr = reliability.sessionStart
+    ? `${Math.floor((Date.now()-reliability.sessionStart)/60000)}m ${Math.floor(((Date.now()-reliability.sessionStart)%60000)/1000)}s`
+    : '—';
+  el.innerHTML = `
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Session duration</td><td>${durationStr}</td></tr>
+    <tr><td>Phrases spoken</td><td>${reliability.latencies.length}</td></tr>
+    <tr><td>False activations / hour</td><td>${reliability.sessionStart ? falsePerHour.toFixed(2) : '—'}</td></tr>
+    <tr><td>Missed gestures (marked)</td><td>${reliability.missedGestures}</td></tr>
+    <tr><td>Median activation latency</td><td>${med !== null ? Math.round(med)+' ms' : '—'}</td></tr>
+  `;
+}
+renderReliabilityTable();
+
+
+let voicesReady = false;
+function warmupVoices(){
+  if (!('speechSynthesis' in window)) return;
+  const v = speechSynthesis.getVoices();
+  if (v.length) voicesReady = true;
+  speechSynthesis.onvoiceschanged = () => { voicesReady = true; };
+}
+function speak(text){
+  if (!text) return;
+  // When inside Flutter app, Flutter's voice service handles speech exclusively
+  if (window.flutter_inappwebview || window.FingerSpeakBridge || window.__fingerSpeakPatientMode || (window.parent && window.parent !== window)) {
+    return;
+  }
+  if (!('speechSynthesis' in window)){ return; }
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95;
+    u.onerror = (e) => console.warn('speech synthesis error:', e.error);
+    speechSynthesis.speak(u);
+  } catch(err){ console.warn('speak() failed:', err); }
+}
+let audioCtx = null;
+function playChime(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.15);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18, audioCtx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+  } catch(err){}
+}
+let captionTimer = null;
+function flashCaption(phrase, gesture){
+  const banner = document.getElementById('captionBanner');
+  document.getElementById('captionIcon').textContent = gesture.icon || guessIcon(gesture.name);
+  document.getElementById('captionText').textContent = phrase;
+  banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show');
+  clearTimeout(captionTimer); captionTimer = setTimeout(() => banner.classList.remove('show'), 2600);
+  const vw = document.getElementById('videoWrap');
+  vw.classList.remove('triggered'); void vw.offsetWidth; vw.classList.add('triggered');
+  setTimeout(() => vw.classList.remove('triggered'), 900);
+}
+function logSpoken(phrase, gestureName){
+  const listEl = document.getElementById('logList');
+  if (listEl.querySelector('.log-empty')) listEl.innerHTML = '';
+  const entry = document.createElement('div'); entry.className = 'log-entry';
+  entry.innerHTML = `<span>${esc(phrase)}</span><span class="t">${esc(gestureName)} · ${new Date().toLocaleTimeString()}</span>`;
+  listEl.prepend(entry);
+}
+
+// ================= confidence ring + probability bars + vitals strip =================
+const RING_CIRCUMFERENCE = 138.2;
+function updateConfidenceRing(fraction){
+  const ring = document.getElementById('ringProgress');
+  const f = Math.max(0, Math.min(1, fraction));
+  ring.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - f);
+  ring.style.stroke = f >= 1 ? '#F2A65A' : '#4FD1C5';
+}
+function buildProbBarsSkeleton(){
+  document.getElementById('probBars').innerHTML = gestures.map(g => `
+    <div class="prob-row" data-prob-row="${g.id}">
+      <div class="pname">${g.icon || guessIcon(g.name)} ${esc(g.name)}</div>
+      <div class="prob-track"><div class="prob-fill" data-prob-fill="${g.id}"></div></div>
+      <div class="prob-pct" data-prob-pct="${g.id}">0%</div>
+    </div>`).join('');
+}
+function updateProbBars(arr){
+  const maxIdx = arr.indexOf(Math.max(...arr));
+  gestures.forEach((g, i) => {
+    const fill = document.querySelector(`[data-prob-fill="${g.id}"]`);
+    if (!fill) return;
+    const pct = document.querySelector(`[data-prob-pct="${g.id}"]`);
+    const row = document.querySelector(`[data-prob-row="${g.id}"]`);
+    const v = arr[i] || 0;
+    fill.style.width = (v*100).toFixed(0) + '%';
+    pct.textContent = (v*100).toFixed(0) + '%';
+    row.classList.toggle('top', i === maxIdx);
+  });
+}
+const vitalsCanvas = document.getElementById('vitalsCanvas');
+function sizeVitals(){ vitalsCanvas.width = vitalsCanvas.clientWidth*devicePixelRatio; vitalsCanvas.height = vitalsCanvas.clientHeight*devicePixelRatio; }
+window.addEventListener('resize', sizeVitals); sizeVitals();
+function pushVitals(v){ vitalsHistory.push(v); vitalsHistory.shift(); drawVitals(); }
+function drawVitals(){
+  const ctx = vitalsCanvas.getContext('2d'); const w=vitalsCanvas.width, h=vitalsCanvas.height;
+  ctx.clearRect(0,0,w,h); ctx.strokeStyle = '#4FD1C5'; ctx.lineWidth = 2*devicePixelRatio;
+  ctx.beginPath();
+  vitalsHistory.forEach((v,i) => { const x=(i/(vitalsHistory.length-1))*w, y=h-(v*h*0.9)-h*0.05; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(242,166,90,0.5)'; ctx.lineWidth = 1;
+  const threshY = h-(confidenceThreshold*h*0.9)-h*0.05;
+  ctx.beginPath(); ctx.moveTo(0,threshY); ctx.lineTo(w,threshY); ctx.stroke();
+}
+
+// ================= misc ui wiring =================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tabpage').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+document.getElementById('threshSlider').addEventListener('input', (e) => {
+  confidenceThreshold = parseFloat(e.target.value);
+  document.getElementById('threshVal').textContent = confidenceThreshold.toFixed(2);
+});
+const startBtnEl = document.getElementById('startBtn');
+if (startBtnEl) {
+  startBtnEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    startCamera().catch(err => console.warn('startBtn click error:', err));
+  });
+}
+
+window.FingerSpeakStudio = {
+  startCamera: startCamera,
+  startPatientMode: function() {
+    startCamera().catch(e => console.warn('startPatientMode camera error:', e));
+  }
+};
+
+document.getElementById('testVoiceBtn').addEventListener('click', () => {
+  warmupVoices();
+  speak('This is a test of FingerSpeak voice output.');
+});
+
+updateConfidenceRing(0);
+renderGestureList();
+</script>
+
+</body>
+</html>

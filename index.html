@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/neurobridge-asha-patient/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="NeuroBridge Asha - Assistive Communication Companion">
+  <meta name="theme-color" content="#0b1a27">
+
+  <!-- iOS PWA meta -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NeuroBridge Asha">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>NeuroBridge Asha</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Instant splash — renders before Flutter downloads anything */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; width: 100%;
+      background: #0b1a27;
+      overflow: hidden;
+    }
+    #splash {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #0b1a27;
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+    #splash.hidden { opacity: 0; pointer-events: none; }
+    #splash-logo {
+      width: 88px; height: 88px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #0B756A 0%, #1de9b6 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 44px;
+      box-shadow: 0 8px 32px rgba(13,185,158,0.35);
+      margin-bottom: 24px;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    #splash h1 {
+      color: #e0f7f4;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 22px; font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    #splash p {
+      color: #5fa8a0;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+    }
+    #splash-bar {
+      width: 180px; height: 3px;
+      background: #1b3340;
+      border-radius: 3px;
+      margin-top: 32px;
+      overflow: hidden;
+    }
+    #splash-bar-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #0B756A, #1de9b6);
+      border-radius: 3px;
+      animation: load 2.5s ease-in-out forwards;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(13,185,158,0.35); }
+      50% { transform: scale(1.06); box-shadow: 0 12px 40px rgba(13,185,158,0.55); }
+    }
+    @keyframes load {
+      0% { width: 0%; }
+      40% { width: 55%; }
+      80% { width: 82%; }
+      100% { width: 95%; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Splash renders in <1ms, before any JS downloads -->
+  <div id="splash">
+    <div id="splash-logo">🤲</div>
+    <h1>NeuroBridge Asha</h1>
+    <p>Assistive Communication Companion</p>
+    <div id="splash-bar"><div id="splash-bar-fill"></div></div>
+  </div>
+
+  <script>
+    // Clean up any legacy service workers that cause reload loops
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
+        }
+      }).catch(function() {});
+    }
+
+    // Dismiss splash once Flutter signals it's ready
+    window.addEventListener('flutter-first-frame', () => {
+      const splash = document.getElementById('splash');
+      if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(() => splash.remove(), 450);
+      }
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
