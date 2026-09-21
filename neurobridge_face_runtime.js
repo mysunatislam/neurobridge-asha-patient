@@ -113,8 +113,8 @@
   // ── NeuroSense Rule Tuning Constants ──────────────────────────────────────
   const BLINKS_FOR_WATER = 3;
   const BLINK_WINDOW_MS = 3500;
-  const BLINK_GAZE_YAW_LIMIT = 8;   // degrees — must be looking at camera
-  const BLINK_GAZE_PITCH_LIMIT = 8;
+  const BLINK_GAZE_YAW_LIMIT = 11;   // degrees — facing camera directly (distinguishable from head turns at 12°+)
+  const BLINK_GAZE_PITCH_LIMIT = 22;
 
   const HEAD_LEFT_ENTER_DEG = 12;
   const HEAD_LEFT_EXIT_DEG = 6;
@@ -314,7 +314,7 @@
     } else if (blinkClosed && earAvg > thOpen) {
       blinkClosed = false;
       const dur = t - blinkT0;
-      if (dur >= 0.12 && dur <= 0.85) {
+      if (dur >= 0.08 && dur <= 0.90) {
         blinkJustCompleted = true;
         console.log('[NeuroSense] Deliberate Blink registered! dur:', dur.toFixed(2), 's');
         broadcastSignal('blink', 0.98);
