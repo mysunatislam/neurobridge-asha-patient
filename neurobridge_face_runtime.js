@@ -1,20 +1,19 @@
 /**
- * NeuroBridge Asha — Clinical Facial Intelligence Engine (Web Runtime)
- * Powered by NeuroFace Sense (MediaPipe Face Mesh + Auto-Calibrated Clinical Intelligence)
+ * NeuroBridge Asha — NeuroSense Facial Communication Engine (Web Runtime)
+ * Powered by NeuroSense (MediaPipe Face Mesh + Auto-Calibrated Gesture Intelligence)
  *
- * Specific Patient Communication Rules:
- * 1. Blinking 5 times in a row -> "I want water"
- * 2. Smiling (sustained) -> "I am feeling good"
- * 3. Abnormality (sustained lateral droop >=3.5% or pain pattern) -> "Emergency help needed"
- * 4. Moving head rightwards 5 times -> "Give me some food"
- * 5. Head nodding -> Confirm ("Yes / Confirm")
+ * Specific Patient Communication Rules (NeuroSense Suite):
+ * 1. 3 intentional eye blinks in a row (looking at camera) -> "I need water"
+ * 2. 3 left head movements                                 -> "I need food"
+ * 3. 3 right head movements                                -> "I need to go to toilet"
+ * 4. Nodding while smiling                                  -> "I am okay, thank you"
  *
  * Runs 100% locally in browser via MediaPipe FaceMesh. No backend or uploads.
  */
 (function (global) {
   'use strict';
 
-  // Canonical MediaPipe Face Mesh (468 + iris 478) indices (from NeuroFace Sense)
+  // Canonical MediaPipe Face Mesh (468 + iris 478) indices
   const NF_LM = {
     eyeL: { outer: 33, inner: 133, up1: 160, up2: 158, low1: 153, low2: 144 },
     eyeR: { outer: 263, inner: 362, up1: 385, up2: 387, low1: 373, low2: 380 },
@@ -28,7 +27,7 @@
     lipUpOut: 0, lipLowOut: 17,
   };
 
-  // Pure geometry metrics from NeuroFace Sense
+  // ── Pure geometry helpers ─────────────────────────────────────────────────
   function dist(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
@@ -96,19 +95,7 @@
     return ((lm[61].y + lm[291].y) / 2 - midY) / fw;
   }
 
-  function detectNod(hist) {
-    if (!hist || hist.length < 30) return false;
-    const seg = hist.slice(-45);
-    let turns = 0;
-    for (let i = 2; i < seg.length; i++) {
-      const d1 = seg[i - 1] - seg[i - 2];
-      const d2 = seg[i] - seg[i - 1];
-      if (d1 * d2 < 0 && Math.abs(d1) + Math.abs(d2) > 3) turns++;
-    }
-    return turns >= 3;
-  }
-
-  // Engine state
+  // ── Engine state ──────────────────────────────────────────────────────────
   let isRunning = false;
   let faceMesh = null;
   let videoEl = null;
@@ -120,30 +107,53 @@
 
   // Auto-calibrated Digital Twin baseline
   let calFrames = 0;
-  let twin = null; // { earMean, mouthW, browGap, dev0, head: { yaw, pitch, roll } }
+  let twin = null;
   let calAccum = { ear: 0, mouthW: 0, browGap: 0, dev: 0, yaw: 0, pitch: 0, roll: 0, count: 0 };
 
-  // Rule State & Gesture Detectors
+  // ── NeuroSense Rule Tuning Constants ──────────────────────────────────────
+  const BLINKS_FOR_WATER = 3;
+  const BLINK_WINDOW_MS = 3500;
+  const BLINK_GAZE_YAW_LIMIT = 8;   // degrees — must be looking at camera
+  const BLINK_GAZE_PITCH_LIMIT = 8;
+
+  const HEAD_LEFT_ENTER_DEG = 12;
+  const HEAD_LEFT_EXIT_DEG = 6;
+  const HEAD_TURNS_FOR_FOOD = 3;
+  const HEAD_LEFT_WINDOW_MS = 5000;
+
+  const HEAD_RIGHT_ENTER_DEG = 12;
+  const HEAD_RIGHT_EXIT_DEG = 6;
+  const HEAD_TURNS_FOR_TOILET = 3;
+  const HEAD_RIGHT_WINDOW_MS = 5000;
+
+  const NOD_PITCH_THRESHOLD = 5;    // degrees — reversal amplitude
+  const NOD_WINDOW_MS = 2000;
+  const NOD_REVERSALS_REQUIRED = 3;
+  const NOD_SMILE_THRESHOLD = 0.35;
+  const NOD_COOLDOWN_MS = 4000;
+
+  // ── Rule 1: Blink detector state ──────────────────────────────────────────
   let blinkClosed = false;
   let blinkT0 = 0;
-  let recentBlinks = []; // timestamps within 4s window
+  let recentBlinks = [];
 
-  let smileHoldTime = 0;
-  let lastSmileCommandAt = 0;
+  // ── Rule 2: Head-left detector state ──────────────────────────────────────
+  let headLeftArmedForFood = false;
+  let recentHeadLeftTurns = [];
 
-  let devHoldTime = 0;
-  let painHoldTime = 0;
-  let lastAbnormalityAt = 0;
+  // ── Rule 3: Head-right detector state ─────────────────────────────────────
+  let headRightArmedForToilet = false;
+  let recentHeadRightTurns = [];
 
-  let headRightArmed = false;
-  let headLeftArmed = false;
+  // ── Rule 4: Nod-while-smile detector state ────────────────────────────────
+  let pitchHistory = [];    // Array of { pitch, t } in seconds
+  let lastNodSmileAt = 0;
+
+  // ── Navigation state (separate from rules) ────────────────────────────────
+  let headLeftArmedNav = false;
+  let headRightArmedNav = false;
   let lastLeftNavAt = 0;
   let lastRightNavAt = 0;
-  let recentHeadRightTurns = []; // timestamps within 6s window
-
-  let pitchHist = [];
-  let lastNodAt = 0;
-  let isNodding = false;
 
   let prevT = performance.now() / 1000;
 
@@ -165,7 +175,7 @@
   }
 
   function speakAndEmit(phrase, intent, signalKind) {
-    console.log('[NeuroBridge Face Intent Triggered]:', phrase, '-> intent:', intent);
+    console.log('[NeuroSense Intent Triggered]:', phrase, '-> intent:', intent);
     try {
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -186,12 +196,28 @@
     calFrames = 0;
     twin = null;
     calAccum = { ear: 0, mouthW: 0, browGap: 0, dev: 0, yaw: 0, pitch: 0, roll: 0, count: 0 };
-    console.log('[NeuroBridge Face] Auto-calibration reset: gathering fresh baseline.');
+    resetRuleState();
+    console.log('[NeuroSense] Auto-calibration reset: gathering fresh baseline.');
+  }
+
+  function resetRuleState() {
+    blinkClosed = false;
+    blinkT0 = 0;
+    recentBlinks = [];
+    headLeftArmedForFood = false;
+    recentHeadLeftTurns = [];
+    headRightArmedForToilet = false;
+    recentHeadRightTurns = [];
+    pitchHistory = [];
+    lastNodSmileAt = 0;
+    headLeftArmedNav = false;
+    headRightArmedNav = false;
   }
 
   function onMesh(res) {
     const lms = (res.multiFaceLandmarks && res.multiFaceLandmarks[0]) || null;
     if (!lms || lms.length < 468) {
+      resetRuleState();
       broadcastStatus({
         faceDetected: false,
         lifecycle: 'active',
@@ -203,8 +229,9 @@
     const t = performance.now() / 1000;
     const dt = Math.min(0.2, Math.max(0.001, t - prevT));
     prevT = t;
+    const tMs = t * 1000;
 
-    // 1. Auto-calibration (first 60 frames = ~2 seconds)
+    // ── 1. Auto-calibration (first 60 frames ≈ 2 seconds) ───────────────
     if (calFrames < 60) {
       calFrames++;
       const eL = ear(lms, NF_LM.eyeL);
@@ -229,11 +256,11 @@
             roll: calAccum.roll / calAccum.count,
           },
         };
-        console.log('[NeuroBridge Face] Auto-calibration complete! Baseline Digital Twin:', twin);
+        console.log('[NeuroSense] Auto-calibration complete! Baseline Digital Twin:', twin);
       }
     }
 
-    // 2. Metrics calculation against neutral baseline
+    // ── 2. Compute metrics ──────────────────────────────────────────────
     const earL = ear(lms, NF_LM.eyeL);
     const earR = ear(lms, NF_LM.eyeR);
     const earAvg = (earL + earR) / 2;
@@ -244,18 +271,39 @@
     const hp = headPose(lms);
     const yaw = hp.yaw - (twin ? twin.head.yaw : 0);
     const pitch = hp.pitch - (twin ? twin.head.pitch : 0);
-    const dev = lipDeviation(lms, twin ? twin.dev0 : 0);
-    const depress = cornerDepression(lms);
 
-    // Adaptive thresholding from baseline
+    // Adaptive blink thresholds from baseline
     const baseEar = (twin && twin.earMean && twin.earMean > 0.15) ? twin.earMean : 0.25;
     const thClose = Math.max(0.14, baseEar * 0.65);
     const thOpen = Math.max(0.18, baseEar * 0.78);
 
-    // 3. Deliberate Blink Detection (Clean hysteresis & safety timeout)
-    const isEyesClosed = earAvg < thClose || (earL < thClose && earR < thClose);
+    // ── Navigation: Edge-triggered head turns (separate from gesture rules) ─
+    if (yaw < -11.0) {
+      if (!headLeftArmedNav && (t - lastLeftNavAt > 0.55)) {
+        headLeftArmedNav = true;
+        lastLeftNavAt = t;
+        console.log('[NeuroSense] Navigation step: Left');
+        broadcastSignal('eyeLookLeft', 0.95);
+      }
+    } else if (yaw > -5.0) {
+      headLeftArmedNav = false;
+    }
 
-    // Safety timeout: auto-release if eyes held closed > 1.2s so blink state never hangs
+    if (yaw > 11.0) {
+      if (!headRightArmedNav && (t - lastRightNavAt > 0.55)) {
+        headRightArmedNav = true;
+        lastRightNavAt = t;
+        console.log('[NeuroSense] Navigation step: Right');
+        broadcastSignal('eyeLookRight', 0.95);
+      }
+    } else if (yaw < 5.0) {
+      headRightArmedNav = false;
+    }
+
+    // ── Blink detection + NeuroSense Rule 1 (water) ─────────────────────────
+    const isEyesClosed = earAvg < thClose || (earL < thClose && earR < thClose);
+    let blinkJustCompleted = false;
+
     if (blinkClosed && (t - blinkT0 > 1.2)) {
       blinkClosed = false;
     }
@@ -266,74 +314,99 @@
     } else if (blinkClosed && earAvg > thOpen) {
       blinkClosed = false;
       const dur = t - blinkT0;
-      // Deliberate intentional blink: 120ms to 850ms
       if (dur >= 0.12 && dur <= 0.85) {
-        console.log('[NeuroBridge Face] Deliberate Blink registered! dur:', dur.toFixed(2), 's');
+        blinkJustCompleted = true;
+        console.log('[NeuroSense] Deliberate Blink registered! dur:', dur.toFixed(2), 's');
         broadcastSignal('blink', 0.98);
       }
     }
 
-    // 4. Smiling (sustained) -> "I am feeling good"
-    if (smile > 0.48) {
-      smileHoldTime += dt;
-      if (smileHoldTime >= 1.0 && t - lastSmileCommandAt > 4.0) {
-        lastSmileCommandAt = t;
-        smileHoldTime = -1.5; // Cooldown
-        speakAndEmit('I am feeling good', 'feeling_good', 'smile');
+    // Only process gesture rules if calibrated
+    if (!twin) {
+      broadcastStatus({
+        faceDetected: true,
+        lifecycle: 'active',
+        message: 'Calibrating... ' + calFrames + '/60',
+        calibrated: false,
+        observedAt: Date.now(),
+      });
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // NeuroSense Rule 1: 3 intentional blinks (looking at camera) → Water
+    // ═══════════════════════════════════════════════════════════════════════
+    const lookingAtCamera = Math.abs(yaw) < BLINK_GAZE_YAW_LIMIT && Math.abs(pitch) < BLINK_GAZE_PITCH_LIMIT;
+
+    if (blinkJustCompleted && lookingAtCamera) {
+      recentBlinks.push(tMs);
+      recentBlinks = recentBlinks.filter(function(blinkAt) { return tMs - blinkAt <= BLINK_WINDOW_MS; });
+      if (recentBlinks.length >= BLINKS_FOR_WATER) {
+        recentBlinks = [];
+        speakAndEmit('I need water', 'water', 'blink3');
       }
-    } else {
-      smileHoldTime = 0;
     }
 
-    // 5. Sustained deliberate asymmetry check (very high threshold, must not be head turn)
-    const devMag = Math.abs(dev);
-    if (devMag >= 0.08 && Math.abs(yaw) < 8) {
-      devHoldTime += dt;
-      if (devHoldTime >= 5.0 && t - lastAbnormalityAt > 15.0) {
-        lastAbnormalityAt = t;
-        devHoldTime = 0;
-        speakAndEmit('Emergency help needed', 'abnormality', 'seizureAlert');
+    // Pitch history for nod detection
+    pitchHistory.push({ pitch: pitch, t: tMs });
+    pitchHistory = pitchHistory.filter(function(e) { return tMs - e.t <= NOD_WINDOW_MS + 500; });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // NeuroSense Rule 2: 3 left head movements → Food
+    // ═══════════════════════════════════════════════════════════════════════
+    if (yaw < -HEAD_LEFT_ENTER_DEG) {
+      headLeftArmedForFood = true;
+    } else if (headLeftArmedForFood && yaw > -HEAD_LEFT_EXIT_DEG) {
+      headLeftArmedForFood = false;
+      recentHeadLeftTurns.push(tMs);
+      recentHeadLeftTurns = recentHeadLeftTurns.filter(function(turnAt) { return tMs - turnAt <= HEAD_LEFT_WINDOW_MS; });
+      if (recentHeadLeftTurns.length >= HEAD_TURNS_FOR_FOOD) {
+        recentHeadLeftTurns = [];
+        speakAndEmit('I need food', 'food', 'headLeft3');
       }
-    } else {
-      devHoldTime = 0;
+    } else if (yaw > HEAD_LEFT_ENTER_DEG) {
+      headLeftArmedForFood = false;
     }
 
-    // 6. Gaze & Head Turn Navigation (Edge-triggered with refractory cooldown)
-    if (yaw < -11.0) {
-      // Looking Left -> Single step left navigation
-      if (!headLeftArmed && (t - lastLeftNavAt > 0.55)) {
-        headLeftArmed = true;
-        lastLeftNavAt = t;
-        console.log('[NeuroBridge Face] Navigation step: Left');
-        broadcastSignal('eyeLookLeft', 0.95);
+    // ═══════════════════════════════════════════════════════════════════════
+    // NeuroSense Rule 3: 3 right head movements → Toilet
+    // ═══════════════════════════════════════════════════════════════════════
+    if (yaw > HEAD_RIGHT_ENTER_DEG) {
+      headRightArmedForToilet = true;
+    } else if (headRightArmedForToilet && yaw < HEAD_RIGHT_EXIT_DEG) {
+      headRightArmedForToilet = false;
+      recentHeadRightTurns.push(tMs);
+      recentHeadRightTurns = recentHeadRightTurns.filter(function(turnAt) { return tMs - turnAt <= HEAD_RIGHT_WINDOW_MS; });
+      if (recentHeadRightTurns.length >= HEAD_TURNS_FOR_TOILET) {
+        recentHeadRightTurns = [];
+        speakAndEmit('I need to go to toilet', 'toilet', 'headRight3');
       }
-    } else if (yaw > -5.0) {
-      headLeftArmed = false; // Re-arm upon returning toward center
+    } else if (yaw < -HEAD_RIGHT_ENTER_DEG) {
+      headRightArmedForToilet = false;
     }
 
-    if (yaw > 11.0) {
-      // Looking Right -> Single step right navigation
-      if (!headRightArmed && (t - lastRightNavAt > 0.55)) {
-        headRightArmed = true;
-        lastRightNavAt = t;
-        console.log('[NeuroBridge Face] Navigation step: Right');
-        broadcastSignal('eyeLookRight', 0.95);
+    // ═══════════════════════════════════════════════════════════════════════
+    // NeuroSense Rule 4: Nodding while smiling → "I am okay, thank you"
+
+    // ═══════════════════════════════════════════════════════════════════════
+    if (smile > NOD_SMILE_THRESHOLD) {
+      // Count pitch direction reversals in the recent window
+      const recent = pitchHistory.filter(function(e) { return tMs - e.t <= NOD_WINDOW_MS; });
+      let reversals = 0;
+      for (let i = 2; i < recent.length; i++) {
+        const d1 = recent[i - 1].pitch - recent[i - 2].pitch;
+        const d2 = recent[i].pitch - recent[i - 1].pitch;
+        if (d1 * d2 < 0 && Math.abs(d1) + Math.abs(d2) > NOD_PITCH_THRESHOLD) {
+          reversals++;
+        }
       }
-    } else if (yaw < 5.0) {
-      headRightArmed = false; // Re-arm upon returning toward center
+      if (reversals >= NOD_REVERSALS_REQUIRED && t - lastNodSmileAt > NOD_COOLDOWN_MS / 1000) {
+        lastNodSmileAt = t;
+        speakAndEmit('I am okay, thank you', 'okay', 'nodSmile');
+      }
     }
 
-    // 7. Head Nodding ("Yes / Confirm")
-    pitchHist.push(pitch);
-    if (pitchHist.length > 50) pitchHist.shift();
-    if (detectNod(pitchHist) && t - lastNodAt > 2.5) {
-      lastNodAt = t;
-      isNodding = true;
-      speakAndEmit('Yes, confirmed', 'confirm', 'headNodSmile');
-      setTimeout(() => { isNodding = false; }, 450);
-    }
-
-    // 8. Live Telemetry Broadcast
+    // ── Live Telemetry Broadcast ─────────────────────────────────────────
     const isBlinkingNow = blinkClosed || earAvg < thClose;
     const leftOpen = isBlinkingNow ? 0.05 : Math.min(1.0, Math.max(0.0, (earL - 0.14) / 0.12));
     const rightOpen = isBlinkingNow ? 0.05 : Math.min(1.0, Math.max(0.0, (earR - 0.14) / 0.12));
@@ -349,30 +422,26 @@
       eyebrowDistance: 0.18 + Math.abs(pitch) * 0.002,
       mouthDistance: marVal,
       symmetryScore: sym / 100,
-      isNodding: isNodding,
-      abnormality: isAbnormal ? abnormalReason : 'Normal',
       calibrated: calFrames >= 60,
       observedAt: Date.now(),
     });
   }
 
-  // Synthetic Demonstration Engine (from NeuroFace Sense demo mode)
+  // ── Synthetic Demonstration Engine ────────────────────────────────────────
   function startSimulationLoop() {
     if (simulationTimer) return;
     simulatedActive = true;
-    console.log('[NeuroBridge Face] Idle reference telemetry active.');
+    console.log('[NeuroSense] Idle reference telemetry active.');
 
     let tick = 0;
-    simulationTimer = setInterval(() => {
+    simulationTimer = setInterval(function() {
       tick++;
       const cycle = tick % 140;
       let curYaw = 0.0;
       let curPitch = 0.0;
       let curEye = 0.88;
       let curSmile = 0.05;
-      let simNod = false;
 
-      // Subtle breathing motion for visual liveliness only — NEVER triggers speech
       if (cycle >= 10 && cycle <= 35) {
         const sub = (cycle - 10) % 5;
         curYaw = sub < 3 ? 3.0 : 0.0;
@@ -398,8 +467,6 @@
         eyebrowDistance: 0.18,
         mouthDistance: 0.08 + curSmile * 0.06,
         symmetryScore: 0.95,
-        isNodding: simNod,
-        abnormality: 'Normal',
         calibrated: true,
         observedAt: Date.now(),
       });
@@ -421,7 +488,7 @@
       try {
         await faceMesh.send({ image: videoEl });
       } catch (err) {
-        console.warn('[NeuroBridge Face] Detection frame error:', err);
+        console.warn('[NeuroSense] Detection frame error:', err);
       }
       sending = false;
     }
@@ -456,10 +523,10 @@
       }
       videoEl.srcObject = cameraStream;
       await videoEl.play();
-      console.log('[NeuroBridge Face] Camera stream playing.');
+      console.log('[NeuroSense] Camera stream playing.');
       return true;
     } catch (err) {
-      console.warn('[NeuroBridge Face] Camera acquisition denied/unavailable, fallback mode active:', err.message);
+      console.warn('[NeuroSense] Camera acquisition denied/unavailable, fallback mode active:', err.message);
       return false;
     }
   }
@@ -467,12 +534,12 @@
   function initMesh() {
     if (faceMesh) return faceMesh;
     if (typeof FaceMesh === 'undefined') {
-      console.warn('[NeuroBridge Face] MediaPipe FaceMesh classic UMD not found in window.');
+      console.warn('[NeuroSense] MediaPipe FaceMesh classic UMD not found in window.');
       return null;
     }
     try {
       const fm = new FaceMesh({
-        locateFile: (f) => 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + f,
+        locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + f; },
       });
       fm.setOptions({
         maxNumFaces: 1,
@@ -482,10 +549,10 @@
       });
       fm.onResults(onMesh);
       faceMesh = fm;
-      console.log('[NeuroBridge Face] FaceMesh initialized successfully.');
+      console.log('[NeuroSense] FaceMesh initialized successfully.');
       return faceMesh;
     } catch (e) {
-      console.warn('[NeuroBridge Face] FaceMesh creation error:', e);
+      console.warn('[NeuroSense] FaceMesh creation error:', e);
       return null;
     }
   }
@@ -494,7 +561,7 @@
     for (let i = 0; i < 20; i++) {
       const m = initMesh();
       if (m) return m;
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise(function(r) { setTimeout(r, 150); });
     }
     return null;
   }
@@ -505,13 +572,12 @@
       isRunning = true;
       resetAutoCalibration();
 
-      // Start responsive synthetic loop immediately so UI is never frozen
       startSimulationLoop();
 
       broadcastStatus({
         faceDetected: true,
         lifecycle: 'active',
-        message: 'NeuroBridge Facial Engine active',
+        message: 'NeuroSense Facial Engine active',
       });
 
       const cameraOk = await startCamera();
@@ -519,7 +585,7 @@
 
       if (cameraOk && meshOk) {
         stopSimulationLoop();
-        console.log('[NeuroBridge Face] Real camera and FaceMesh active — live inference running.');
+        console.log('[NeuroSense] Real camera and FaceMesh active — live inference running.');
         animFrameId = requestAnimationFrame(pump);
       }
     },
@@ -532,7 +598,7 @@
       }
       stopSimulationLoop();
       if (cameraStream) {
-        cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream.getTracks().forEach(function(track) { track.stop(); });
         cameraStream = null;
       }
       if (videoEl) {
@@ -541,16 +607,15 @@
       broadcastStatus({
         faceDetected: false,
         lifecycle: 'stopped',
-        message: 'Facial monitor stopped',
+        message: 'NeuroSense monitor stopped',
       });
     },
 
-    // Manual test triggers for all 5 actions
-    triggerWater() { speakAndEmit('I want water', 'water', 'blink'); },
-    triggerFeelingGood() { speakAndEmit('I am feeling good', 'feeling_good', 'smile'); },
-    triggerAbnormality() { speakAndEmit('Emergency help needed', 'abnormality', 'seizureAlert'); },
-    triggerFood() { speakAndEmit('Give me some food', 'food', 'eyeLookRight'); },
-    triggerConfirm() { speakAndEmit('Yes, confirmed', 'confirm', 'headNodSmile'); },
+    // Manual test triggers for all 4 NeuroSense actions
+    triggerWater() { speakAndEmit('I need water', 'water', 'blink3'); },
+    triggerFood() { speakAndEmit('I need food', 'food', 'headLeft3'); },
+    triggerToilet() { speakAndEmit('I need to go to toilet', 'toilet', 'headRight3'); },
+    triggerOkay() { speakAndEmit('I am okay, thank you', 'okay', 'nodSmile'); },
 
     resetCalibration() { resetAutoCalibration(); },
   };
@@ -558,26 +623,23 @@
   global.NeuroBridgeFace = NeuroBridgeFace;
 
   if (typeof window !== 'undefined') {
-    // Listen for postMessage from Flutter Web
-    window.addEventListener('message', (event) => {
+    window.addEventListener('message', function(event) {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
       if (data.type === 'neurobridge_trigger_gesture') {
         const g = data.gesture;
-        if (g === 'water' || g === '5-blinks') NeuroBridgeFace.triggerWater();
-        else if (g === 'feeling_good' || g === 'smile') NeuroBridgeFace.triggerFeelingGood();
-        else if (g === 'abnormality' || g === 'emergency') NeuroBridgeFace.triggerAbnormality();
-        else if (g === 'food' || g === '5-head-right') NeuroBridgeFace.triggerFood();
-        else if (g === 'nod' || g === 'confirm') NeuroBridgeFace.triggerConfirm();
+        if (g === 'water' || g === '3-blinks') NeuroBridgeFace.triggerWater();
+        else if (g === 'food' || g === '3-head-left') NeuroBridgeFace.triggerFood();
+        else if (g === 'toilet' || g === '3-head-right') NeuroBridgeFace.triggerToilet();
+        else if (g === 'okay' || g === 'nod-smile') NeuroBridgeFace.triggerOkay();
       } else if (data.type === 'neurobridge_reset_calibration') {
         NeuroBridgeFace.resetCalibration();
       }
     });
 
-    // Auto-start immediately when window is loaded
-    window.addEventListener('load', () => {
-      console.log('[NeuroBridge Face] Facial Intelligence Engine registered.');
-      setTimeout(() => {
+    window.addEventListener('load', function() {
+      console.log('[NeuroSense] Facial Communication Engine registered.');
+      setTimeout(function() {
         if (!isRunning) NeuroBridgeFace.start();
       }, 300);
     });
