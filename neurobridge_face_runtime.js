@@ -136,6 +136,9 @@
   let lastAbnormalityAt = 0;
 
   let headRightArmed = false;
+  let headLeftArmed = false;
+  let lastLeftNavAt = 0;
+  let lastRightNavAt = 0;
   let recentHeadRightTurns = []; // timestamps within 6s window
 
   let pitchHist = [];
@@ -245,37 +248,35 @@
     const depress = cornerDepression(lms);
 
     // Adaptive thresholding from baseline
-    const baseEar = (twin && twin.earMean && twin.earMean > 0.15) ? twin.earMean : 0.26;
-    const thClose = Math.max(0.165, baseEar * 0.70);
-    const thOpen = Math.max(0.195, baseEar * 0.83);
+    const baseEar = (twin && twin.earMean && twin.earMean > 0.15) ? twin.earMean : 0.25;
+    const thClose = Math.max(0.14, baseEar * 0.65);
+    const thOpen = Math.max(0.18, baseEar * 0.78);
 
-    // 3. Rule 1: Blinking 5 times in a row -> "I want water"
-    const isEyesClosed = earAvg < thClose || earL < thClose || earR < thClose;
+    // 3. Deliberate Blink Detection (Clean hysteresis & safety timeout)
+    const isEyesClosed = earAvg < thClose || (earL < thClose && earR < thClose);
+
+    // Safety timeout: auto-release if eyes held closed > 1.2s so blink state never hangs
+    if (blinkClosed && (t - blinkT0 > 1.2)) {
+      blinkClosed = false;
+    }
+
     if (!blinkClosed && isEyesClosed) {
       blinkClosed = true;
       blinkT0 = t;
     } else if (blinkClosed && earAvg > thOpen) {
       blinkClosed = false;
       const dur = t - blinkT0;
-      if (dur >= 0.04 && dur <= 1.2) {
-        recentBlinks.push(t);
-        recentBlinks = recentBlinks.filter((bt) => t - bt <= 5.0);
-        console.log('[NeuroBridge Face] Blink detected! Recent count:', recentBlinks.length, '/ 5, dur:', dur.toFixed(2), 's');
-        
-        // Broadcast every valid single blink so calibration & telemetry HUD receive it immediately!
-        broadcastSignal('blink', 0.95);
-
-        if (recentBlinks.length >= 5) {
-          recentBlinks = [];
-          speakAndEmit('I want water', 'water', 'blink');
-        }
+      // Deliberate intentional blink: 120ms to 850ms
+      if (dur >= 0.12 && dur <= 0.85) {
+        console.log('[NeuroBridge Face] Deliberate Blink registered! dur:', dur.toFixed(2), 's');
+        broadcastSignal('blink', 0.98);
       }
     }
 
-    // 4. Rule 2: Smiling (sustained) -> "I am feeling good"
-    if (smile > 0.40) {
+    // 4. Smiling (sustained) -> "I am feeling good"
+    if (smile > 0.48) {
       smileHoldTime += dt;
-      if (smileHoldTime >= 0.8 && t - lastSmileCommandAt > 4.0) {
+      if (smileHoldTime >= 1.0 && t - lastSmileCommandAt > 4.0) {
         lastSmileCommandAt = t;
         smileHoldTime = -1.5; // Cooldown
         speakAndEmit('I am feeling good', 'feeling_good', 'smile');
@@ -284,60 +285,42 @@
       smileHoldTime = 0;
     }
 
-    // 5. Rule 3: Abnormality -> "Emergency help needed"
+    // 5. Sustained deliberate asymmetry check (very high threshold, must not be head turn)
     const devMag = Math.abs(dev);
-    let isAbnormal = false;
-    let abnormalReason = '';
-
-    // Sustained lateral lip deviation (>=3.5% of face width for > 4 seconds)
-    if (devMag >= 0.035 && Math.abs(yaw) < 14) {
+    if (devMag >= 0.08 && Math.abs(yaw) < 8) {
       devHoldTime += dt;
-      if (devHoldTime >= 4.0) {
-        isAbnormal = true;
-        abnormalReason = 'Sustained lateral lip deviation (' + (devMag * 100).toFixed(1) + '%)';
+      if (devHoldTime >= 5.0 && t - lastAbnormalityAt > 15.0) {
+        lastAbnormalityAt = t;
+        devHoldTime = 0;
+        speakAndEmit('Emergency help needed', 'abnormality', 'seizureAlert');
       }
-    } else if (devMag < 0.02) {
+    } else {
       devHoldTime = 0;
     }
 
-    // Sustained pain/distress expression (>=0.60 for > 3 seconds)
-    const squint = Math.max(0, Math.min(1, (0.28 - earAvg) * 4));
-    const tension = Math.max(0, Math.min(1, (0.09 - marVal) * 6));
-    const painScore = 0.35 * squint + 0.35 * tension + 0.30 * Math.max(0, Math.min(1, depress / 0.03));
-    if (painScore >= 0.60) {
-      painHoldTime += dt;
-      if (painHoldTime >= 3.0) {
-        isAbnormal = true;
-        abnormalReason = 'Pain/distress pattern detected';
+    // 6. Gaze & Head Turn Navigation (Edge-triggered with refractory cooldown)
+    if (yaw < -11.0) {
+      // Looking Left -> Single step left navigation
+      if (!headLeftArmed && (t - lastLeftNavAt > 0.55)) {
+        headLeftArmed = true;
+        lastLeftNavAt = t;
+        console.log('[NeuroBridge Face] Navigation step: Left');
+        broadcastSignal('eyeLookLeft', 0.95);
       }
-    } else if (painScore < 0.40) {
-      painHoldTime = 0;
+    } else if (yaw > -5.0) {
+      headLeftArmed = false; // Re-arm upon returning toward center
     }
 
-    if (isAbnormal && t - lastAbnormalityAt > 10.0) {
-      lastAbnormalityAt = t;
-      speakAndEmit('Emergency help needed', 'abnormality', 'seizureAlert');
-    }
-
-    // 6. Rule 4: Moving head rightwards 5 times -> "Give me some food"
-    if (yaw > 12.0) {
-      if (!headRightArmed) {
+    if (yaw > 11.0) {
+      // Looking Right -> Single step right navigation
+      if (!headRightArmed && (t - lastRightNavAt > 0.55)) {
         headRightArmed = true;
+        lastRightNavAt = t;
+        console.log('[NeuroBridge Face] Navigation step: Right');
+        broadcastSignal('eyeLookRight', 0.95);
       }
-    } else if (headRightArmed && yaw < 6.0) {
-      headRightArmed = false;
-      recentHeadRightTurns.push(t);
-      recentHeadRightTurns = recentHeadRightTurns.filter((ht) => t - ht <= 6.0);
-      console.log('[NeuroBridge Face] Rightward head turn registered. Count:', recentHeadRightTurns.length, '/ 5');
-      if (recentHeadRightTurns.length >= 5) {
-        recentHeadRightTurns = [];
-        speakAndEmit('Give me some food', 'food', 'eyeLookRight');
-      } else {
-        broadcastSignal('eyeLookRight', 0.90);
-      }
-    } else if (yaw < -12.0) {
-      // Leftward head turn for navigation
-      broadcastSignal('eyeLookLeft', 0.90);
+    } else if (yaw < 5.0) {
+      headRightArmed = false; // Re-arm upon returning toward center
     }
 
     // 7. Head Nodding ("Yes / Confirm")
