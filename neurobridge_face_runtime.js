@@ -261,8 +261,24 @@
     }
 
     // ── 2. Compute metrics ──────────────────────────────────────────────
-    const earL = ear(lms, NF_LM.eyeL);
-    const earR = ear(lms, NF_LM.eyeR);
+    let earL = ear(lms, NF_LM.eyeL);
+    let earR = ear(lms, NF_LM.eyeR);
+
+    // Neural blendshape integration if present
+    const blendshapes = (res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories) || null;
+    if (blendshapes) {
+      let bLeft = 0;
+      let bRight = 0;
+      for (let i = 0; i < blendshapes.length; i++) {
+        const cat = blendshapes[i];
+        if (cat.categoryName === 'eyeBlinkLeft') bLeft = cat.score;
+        if (cat.categoryName === 'eyeBlinkRight') bRight = cat.score;
+      }
+      if (bLeft > 0.35 || bRight > 0.35) {
+        earL *= Math.max(0.05, 1 - bLeft * 0.85);
+        earR *= Math.max(0.05, 1 - bRight * 0.85);
+      }
+    }
     const earAvg = (earL + earR) / 2;
 
     const marVal = mar(lms);
@@ -274,8 +290,8 @@
 
     // Adaptive blink thresholds from baseline
     const baseEar = (twin && twin.earMean && twin.earMean > 0.15) ? twin.earMean : 0.25;
-    const thClose = Math.max(0.14, baseEar * 0.65);
-    const thOpen = Math.max(0.18, baseEar * 0.78);
+    const thClose = Math.max(0.16, baseEar * 0.70);
+    const thOpen = Math.max(0.20, baseEar * 0.82);
 
     // ── Navigation: Edge-triggered head turns (separate from gesture rules) ─
     if (yaw < -11.0) {
@@ -319,18 +335,6 @@
         console.log('[NeuroSense] Deliberate Blink registered! dur:', dur.toFixed(2), 's');
         broadcastSignal('blink', 0.98);
       }
-    }
-
-    // Only process gesture rules if calibrated
-    if (!twin) {
-      broadcastStatus({
-        faceDetected: true,
-        lifecycle: 'active',
-        message: 'Calibrating... ' + calFrames + '/60',
-        calibrated: false,
-        observedAt: Date.now(),
-      });
-      return;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -387,7 +391,6 @@
 
     // ═══════════════════════════════════════════════════════════════════════
     // NeuroSense Rule 4: Nodding while smiling → "I am okay, thank you"
-
     // ═══════════════════════════════════════════════════════════════════════
     if (smile > NOD_SMILE_THRESHOLD) {
       // Count pitch direction reversals in the recent window
@@ -423,6 +426,10 @@
       mouthDistance: marVal,
       symmetryScore: sym / 100,
       calibrated: calFrames >= 60,
+      recentBlinkCount: recentBlinks.length,
+      recentHeadLeftCount: recentHeadLeftTurns.length,
+      recentHeadRightCount: recentHeadRightTurns.length,
+      message: calFrames < 60 ? 'Calibrating... ' + calFrames + '/60' : 'Tracking patient face (MediaPipe)',
       observedAt: Date.now(),
     });
   }
@@ -447,7 +454,10 @@
         curYaw = sub < 3 ? 3.0 : 0.0;
       } else if (cycle >= 40 && cycle <= 65) {
         const sub = (cycle - 40) % 5;
-        curEye = sub < 2 ? 0.82 : 0.88;
+        curEye = sub < 2 ? 0.05 : 0.88;
+        if (sub === 0) {
+          broadcastSignal('blink', 0.98);
+        }
       } else if (cycle >= 70 && cycle <= 95) {
         const progress = Math.sin(((cycle - 70) / 25) * Math.PI);
         curSmile = 0.04 + 0.12 * progress;
@@ -468,6 +478,7 @@
         mouthDistance: 0.08 + curSmile * 0.06,
         symmetryScore: 0.95,
         calibrated: true,
+        recentBlinkCount: curEye < 0.3 ? 1 : 0,
         observedAt: Date.now(),
       });
     }, 100);
@@ -480,6 +491,34 @@
     }
     simulatedActive = false;
   }
+
+  // Interactive window helper for instant testing
+  window.simulateBlink = function() {
+    broadcastSignal('blink', 0.98);
+    broadcastStatus({
+      faceDetected: true,
+      lifecycle: 'active',
+      leftEyeOpen: 0.05,
+      rightEyeOpen: 0.05,
+      smileProbability: 0.05,
+      headYaw: 0,
+      headPitch: 0,
+      recentBlinkCount: 1,
+      observedAt: Date.now(),
+    });
+    setTimeout(function() {
+      broadcastStatus({
+        faceDetected: true,
+        lifecycle: 'active',
+        leftEyeOpen: 0.88,
+        rightEyeOpen: 0.88,
+        smileProbability: 0.05,
+        headYaw: 0,
+        headPitch: 0,
+        observedAt: Date.now(),
+      });
+    }, 280);
+  };
 
   async function pump() {
     if (!isRunning) return;
